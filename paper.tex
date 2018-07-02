@@ -88,7 +88,8 @@ These bytes are the ``storage'' of the virtual machine.
 
 Cells in the CA are updated in a pseudorandom order.
 This can be any order that visits all cells uniformly;
-a Mersenne Twister is suitable.
+a Mersenne Twister is suitable for this,
+and also for the generation of the random variable {\tt RUNTIME} used to constrain the update (see below).
 
 A cell $(x,y,z)$ is updated by emulating an 8-bit virtual machine.
 The CPU is the MOS Technology 6502 processor.
@@ -114,23 +115,27 @@ the registers {\tt A,X,Y} are initialized to zero,
 all status flags (register {\tt P}) are set to zero,
 the stack pointer (register {\tt SP}) is set to \hex{FF},
 the program counter {\tt PC} is set to \hex{0000},
+{\tt TIMELEFT} is initalized to {\tt STOPTIME} (see below),
 and execution begins at the first byte of zero page.
 
 Execution is terminated
 when a software interrupt or undefined instruction is encountered,
-or by non-maskable interrupt after a predetermined, but (pseudo)random, number of cycles $C$.
-The LSB of $C$ is uniformly distributed;
+or by non-maskable interrupt after a predetermined, but (pseudo)random, number of cycles {\tt STOPTIME}.
+{\tt STOPTIME} is a 16-bit integer.
+The LSB of {\tt STOPTIME} is uniformly distributed;
 the MSB is distributed according to a geometric distribution with parameter $\frac{1}{2}$.
-Thus, with probability $\frac{1}{2}$, the value of $C$ lies in the range \hexrange{0}{FF};
+Thus, with probability $\frac{1}{2}$, the value of {\tt STOPTIME} lies in the range \hexrange{0}{FF};
 with probability $\frac{1}{4}$, it lies in the range \hexrange{100}{1FF};
 with probability $\frac{1}{8}$ it's in the range \hexrange{200}{2FF};
 with probability $\frac{1}{16}$ it's \hexrange{300}{3FF};
 and so on.
-(It does not overflow when the MSB reaches \hex{FF}, which happens after the heat death of the universe.)
+({\tt STOPTIME} stops incrementing and does not overflow when the MSB reaches \hex{FF},
+which happens after the heat death of the universe.)
 Throughout execution, the {\em remaining} value of this timer
 (i.e. the number of cycles from now until termination)
 is visible to the program
-as the read-only 16-bit value at memory address \hexrange{0400}{0401}.
+as the read-only 16-bit value called {\tt TIMELEFT},
+available at memory address \hexrange{0400}{0401}.
 
 On termination, the transient address ranges in the memory map
 (including the stack)
@@ -146,7 +151,7 @@ is mapped back to the cellular automata storage.
   \hex{0000} & \hex{00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
   \hex{0100} & \hex{01FF} & RAM (transient) & Stack, initialized to zero \\
   \hex{0200} & \hex{03FF} & RAM (transient) & ``Scratch'' memory, initialized to zero \\
-  \hex{0400} & \hex{0401} & ROM (emulator-mapped) & Cycles left before termination \\
+  \hex{0400} & \hex{0401} & ROM (emulator-mapped) & {\tt TIMELEFT}, cycles left before termination \\
   \hex{0402} & \hex{3FFF} & Reserved & Read-only, zero \\
   \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
   \hex{8000} & \hex{FFFF} & ROM & Read-only (operating system) \\
