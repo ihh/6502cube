@@ -60,26 +60,31 @@
 % Document
 \begin{document}
 
-\title{Infinite Cellular Automata Running Virtual 6502 Processors}
+\title{Peer-to-Peer 6502 Cellular Automata}
 \author{Ian Holmes \\ Berkeley, California, USA}
 
 \maketitle
 
 
 \begin{abstract}
-  Cellular automata.
-  6502s.
-  Blockchain.
+  As a toy illustration,
+  this paper describes a blockchain cellular automata
+  comprising a 3D array of virtual machines.
+  Each machine emulates a 6502 processor with access to one page (256 bytes) of persistent storage,
+  as well as the pages of its neighbors (and a read-only operating system).
+  Simulation of this machine is incentivized via proof-of-work,
+  writes are limited by transaction fee,
+  and communications between adjacent nodes on the 3D grid are modeled as blockchain mergers.
 \end{abstract}
 
 \section{Cellular automata}
 
-The cellular automaton (CA) is a $L \times L \times L$ array of cells.
-Cells are indexed $(x,y,z$) where
+The cellular automaton (CA) is a $L \times L \times L$ array of cells,
+located at an offset $(\alpha_x,\alpha_y,\alpha_z)$ in integer 3-space.
+Cells in the CA are indexed $(x,y,z$) where
 $\alpha_x \leq x < \alpha_x+L$,
 $\alpha_y \leq y < \alpha_y+L$,
-$\alpha_z \leq z < \alpha_z+L$
-and $(\alpha_x,\alpha_y,\alpha_z)$ are integers representing global coordinates of this CA.
+$\alpha_z \leq z < \alpha_z+L$.
 
 Each cell has 256 bytes (one ``page'') of state.
 All cells' bytes are initially zero, unless otherwise specified
@@ -87,7 +92,7 @@ All cells' bytes are initially zero, unless otherwise specified
 These bytes are the ``storage'' of the virtual machine.
 
 An {\bf update} of the CA consists of updating each cell in the CA in a pseudorandom order.
-This can be any order that visits all cells uniformly;
+This can be any order that visits $L^3$ uniformly-random selected cells;
 a Mersenne Twister is suitable for this,
 and also for the generation of the random variable {\tt RUNTIME} used to constrain the update (see below).
 
@@ -124,7 +129,7 @@ or by non-maskable interrupt after a predetermined, but (pseudo)random, number o
 {\tt STOPTIME} is a 16-bit integer.
 The LSB of {\tt STOPTIME} is uniformly distributed;
 the MSB is distributed according to a geometric distribution with parameter $\frac{1}{2}$.
-Thus, with probability $\frac{1}{2}$, the value of {\tt STOPTIME} lies in the range \hexrange{0}{FF};
+Thus, with probability $\frac{1}{2}$, the value of {\tt STOPTIME} lies uniformly in the range \hexrange{00}{FF};
 with probability $\frac{1}{4}$, it lies in the range \hexrange{100}{1FF};
 with probability $\frac{1}{8}$ it's in the range \hexrange{200}{2FF};
 with probability $\frac{1}{16}$ it's \hexrange{300}{3FF};
@@ -143,7 +148,8 @@ are discarded.
 The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
 is copied back to the cellular automata storage.
 
-\section{Adjacencies}
+\section{Blankets}
+\label{sec:Blankets}
 
 Consider those cell coordinates $(x,y,z)$ that are outside the CA,
 e.g. $(\alpha_x-1,\alpha_y,\alpha_z)$ or  $(\alpha_x,\alpha_y,\alpha_z + L)$.
@@ -151,7 +157,94 @@ Some of these, specifically those in the Moore neighborhood of cells that are in
 are a relevant initial condition for the machine,
 since they map to bytes in its addressable memory.
 
+We refer to these cells as the {\bf blanket} of the CA.
+Previously, we specified that their state was implicitly initialized to zero.
+More generally, we may refer to the initial (and perpetual, throughout the execution of an update)
+state of these cells as the CA's {\bf blanket state}.
+This blanket state is zero until otherwise specified, but may be affected
+by interactions with neighboring CAs in the infinite vector space,
+as for example by the blockchain of Section~\ref{sec:Blockchain}.
 
+\section{Blockchain}
+\label{sec:Blockchain}
+
+The CA has an associated blockchain, defined as in \cite{Nakamoto2008}.
+The proof-of-work is adjusted to include updating the CA,
+and the mining incentive is adjusted to include redemption of coins minted by adjacent CAs
+(this also updates the blanket cells accounted for by those CAs).
+
+Specifically, let the proof-of-work include $C \times Z$ updates of the CA,
+where $Z$ is the number of zeroes required by the network at the start of the hash function for a valid block,
+and $C$ is the number of cycles expected in the blockchain update time
+(which for bitcoin is 10 minutes).
+
+Let the definition of a block include the coordinates $(\alpha_x,\alpha_y,\alpha_z,L)$;
+these coordinates, together with the number of updates,
+must be used to seed the random number generator for the $Z$ updates,
+and the block must include the $256 L^3$ bytes describing the state of the CA following the update.
+
+Any transaction in the blockchain may include, as additional data,
+a {\bf write operation} which modifies the state of one or more cells of the CA.
+This modification is considered to take place after the emulation of $Z$ update cycles
+which is part of the proof-of-work protocol.
+The order in which such write operations are applied,
+each potentially overwriting the state modifications of its predecessors,
+is implied by the ordering of the transaction in the block.
+As usual, the transaction may include network fees to incentivize inclusion of transactions
+by the miner
+(and prioritization later in the block).
+The transaction fee is, as usual, the difference between the output and input values of the transaction,
+minus a write operation tax of $W$ coins per cell written,
+to discourage frivolous edits.
+(Suggest $W=1$ to keep this simple.
+Minting a coin lets you write a cell.
+Seems fair.)
+
+The block may include sections of blockchain from {\bf adjacent cellular automata},
+defined to be CAs with co-ordinates containing cells that
+overlap with the current CA's blanket,
+but no cells that overlap with
+cells in the co-ordinate range of this CA (or any other CA previously encountered in the blockchain,
+except the adjacent CA itself).
+These blockchain segments from adjacent CAs are called {\bf adjacent segments}.
+
+Adjacent segments must be consistent with any previously-observed adjacent segments
+earlier on the current blockchain (that is, they must not involve conflicting CA,
+and they must otherwise be consistent continuations of the adjacent CA's blockchain).
+They may, themselves, recursively refer to parts of the current blockchain as their own adjacent segments,
+summarized by their hashes for compactness.
+
+When a block includes an adjacent segment, the CA's blanket is updated to reflect the state
+of the blanket cells described by the adjacent segment.
+Regular inclusion of adjacent segments from an adjacent CA's blockchain
+corresponds to keeping a bidirectional read-only interface open with that CA.
+
+To incentivize this,
+inclusion of an adjacent segment in a block for the first time
+accrues an additional benefit of $C/R$ coins to the miner of the block,
+where $C$ is the number of {\bf redeemable coins} mined or accrued (via more distant, proximal adjacencies)
+by cells in the adjacent CA,
+and $R$ is the {\bf redemption rate}, the number of redeemable coins in adjacent CAs
+required to accrue a coin in the current CA.
+It is of course necessary to have $R>2$ to prevent an explosion of redeemable coins in 3D space;
+another notable value is $R=26$, which (in the densely-connected Moore neighborhood)
+ensures that the number of coins redeemed is less than the number of coins mined locally
+(the corresponding value for the von Neumann neighborhood of Table~\ref{tab:VonNeumannNeighborhood}
+is much lower, at $R=6$).
+
+Setting the parameters $L$ and $C$ is a little arbitrary.
+If we ran a 6502 CPU at 1Mhz for 10 minutes, with a mean of 400 cycles per cellular update
+(the random variable {\tt STOPTIME} actually has a mean of 383.5 cycles),
+we would update the whole board $10^6 \times 10 \times 60 \times 60 / (400 \times L^3)$ times
+using the 10-minute bitcoin block rate.
+The CA state requires $256 \times L^3$ bytes.
+Faster clocks and protocols no doubt allow better numbers,
+but considering these values and estimating conservatively,
+we recommend $L=64$ and $C=256$ so that each block takes at most 64Mb to describe the CA state;
+each cell is updated, on average, every few minutes;
+and the proof-of-work burden (for $Z=1$) is roughly comparable to a 6502 CPU.
+
+% Tables
 \begin{table}
 \begin{tabular}{llll}
   \hline
@@ -160,7 +253,7 @@ since they map to bytes in its addressable memory.
   \hex{0000} & \hex{00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
   \hex{0100} & \hex{01FF} & RAM (transient) & Stack, initialized to zero \\
   \hex{0200} & \hex{03FF} & RAM (transient) & ``Scratch'' memory, initialized to zero \\
-  \hex{0400} & \hex{0401} & ROM (emulator-mapped) & {\tt TIMELEFT}, cycles left before termination \\
+  \hex{0400} & \hex{0401} & ROM (emulator-mapped) & {\tt TIMELEFT}: cycles left before termination \\
   \hex{0402} & \hex{3FFF} & Reserved & Read-only, zero \\
   \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
   \hex{8000} & \hex{FFFF} & ROM & Read-only (operating system) \\
@@ -178,10 +271,11 @@ since they map to bytes in its addressable memory.
   \label{tab:MooreNeighborhood}
   Memory map for the 6502 virtual machine of cell $(x,y,z)$,
   using the 26-cell three-dimensional Moore neighborhood.
-  All address ranges not defined in this table are read-only and zero; writing to them has no effect.
+  All address ranges not defined in this table are read-only and zero;
+  writing to these addresses has no effect.
   Pages mapping to cells outside the CA (e.g. $x<\alpha_x$ or $x \geq \alpha_x+L$, or similarly for $y,z$)
-  are zero when read (unless otherwise specified),
-  and writing to them has no effect.
+  are read-only and zero (unless otherwise specified, as in Section~\ref{sec:Blankets}).
+  Writing to these addresses has no effect.
 }
 \end{table}
 
@@ -215,13 +309,6 @@ since they map to bytes in its addressable memory.
   \label{tab:AddressBits}
 }
 \end{table}
-
-
-
-
-\section{Blockchain description}
-
-\cite{Nakamoto2008}
 
 \section*{Acknowledgments}
 Thanks to Peter Irvine, Chris Evans, Richard Evans, Michael Mateas.
