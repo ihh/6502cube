@@ -1,5 +1,9 @@
 \documentclass{article}
 
+% Memory address
+\newcommand\hex[1]{{\tt #1}}
+\newcommand\hexrange[2]{\hex{#1}{\tt -}\hex{#2}}
+
 % Macro to generate neighborhood memory map table
 \newcommand\memtable[1]{
 \begin{tabular}{lll}
@@ -56,8 +60,8 @@
 % Document
 \begin{document}
 
-\title{Infinite Cellular Automata Running Virtual 6502 Machines}
-\author{Ian Holmes \\ Department of Bioengineering, University of California, Berkeley, USA}
+\title{Infinite Cellular Automata Running Virtual 6502 Processors}
+\author{Ian Holmes \\ Berkeley, California, USA}
 
 \maketitle
 
@@ -70,22 +74,21 @@
 
 \section{Cellular automata}
 
-The cellular automaton is a $L \times L \times L$ array of cells.
-Cells are indexed $(x,y,z$) where $0 \leq x \leq L$, $0 \leq y \leq L$, $0 \leq z \leq L$.
+The cellular automaton (CA) is a $L \times L \times L$ array of cells.
+Cells are indexed $(x,y,z$) where
+$\alpha \leq x \leq \alpha+L$,
+$\beta \leq y \leq \beta+L$,
+$\gamma \leq z \leq \gamma+L$
+and $(\alpha,\beta,\gamma)$ are integers representing global coordinates of this CA.
 
 Each cell has 256 bytes (one ``page'') of state.
-All cells' bytes are initially zero.
-This is the ``storage'' of the virtual machine.
+All cells' bytes are initially zero, unless otherwise specified
+(including, implicitly, cells whose coordinates are outside the CA).
+These bytes are the ``storage'' of the virtual machine.
 
-Cells are updated in a pseudorandom order.
-This can be any order that visits all cells uniformly.
-If $L$ is a power of 2, $L = 2^N$ for some integer $N$,
-we can use the simple ordering $0 \leq i \leq 2^{3N}$
-with $(x_i,y_i,z_i)$ defined such that
-the $k$'th bit of $x_i$ is the $3N-3k-1$'th bit of $i$,
-the $k$'th bit of $y_i$ is the $3N-3k-2$'th bit of $i$, and
-the $k$'th bit of $z_i$ is the $3N-3k-3$'th bit of $i$
-(using LSB-0 numbering).
+Cells in the CA are updated in a pseudorandom order.
+This can be any order that visits all cells uniformly;
+a Mersenne Twister is suitable.
 
 A cell $(x,y,z)$ is updated by emulating an 8-bit virtual machine.
 The CPU is the MOS Technology 6502 processor.
@@ -93,54 +96,65 @@ The memory map is shown in Table~\ref{tab:MemoryMap}.
 In this memory map, the 27 pages of storage
 for the cell and its 26 neighbors
 in the $3 \times 3 \times 3$ unit cube centered on $(x,y,z)$
-are mapped directly to pages in the RAM of the virtual machine.
+are mapped directly to bytes in the address range \hexrange{4000}{7FFF} of the virtual machine.
 
 The detailed description of the memory map for this $3 \times 3 \times 3$ neighborhood,
 which in cellular automata terminology is
 the {\em three-dimensional Moore neighborhood},
 is given in Table~\ref{tab:MooreNeighborhood}.
 
-The memory map can be understood as the cell $(x+i-1,y+j-1,z+k-1)$
+The neighborhood memory map can be understood as the cell $(x+i-1,y+j-1,z+k-1)$
 mapping to page number (64+i*16+j*4+k) with $i,j,k \in \{0,1,2\}$.
-Thus, in a memory-mapped 16-bit address, the bits have the following meanings
+Thus, in a memory-mapped 16-bit address, the bits have the meanings shown in Table~\ref{tab:AddressBits}.
+Note the exception: cell $(x,y,z)$ is not mapped to page 85 (\hexrange{5500}{55FF})
+because it is mapped to zero page (\hexrange{0000}{00FF}) instead.
 
-\begin{tabular}{ll}
-  \hline
-  Bit(s) & Meaning \\
-  \hline
-  14,15 & Must be {\tt 01} \\
-  12,13 & $i$ \\
-  10,11 & $j$ \\
-  8,9 & $k$ \\
-  0-7 & Address within page \\
-  \hline
-\end{tabular}
+At the beginning of an update,
+the registers {\tt A,X,Y} are initialized to zero,
+all status flags (register {\tt P}) are set to zero,
+the stack pointer (register {\tt SP}) is set to \hex{FF},
+the program counter {\tt PC} is set to \hex{0000},
+and execution begins at the first byte of zero page.
 
-Note the exception: cell $(x,y,z)$ is not mapped to {\tt 5500-55FF}
-because it is mapped to zero page {\tt 0000-00FF} instead.
+Execution is terminated
+when a software interrupt or undefined instruction is encountered,
+or by non-maskable interrupt after a predetermined, but (pseudo)random, number of cycles $C$.
+The LSB of $C$ is uniformly distributed;
+the MSB is distributed according to a geometric distribution with parameter $\frac{1}{2}$.
+Thus, with probability $\frac{1}{2}$, the value of $C$ lies in the range \hexrange{0}{FF};
+with probability $\frac{1}{4}$, it lies in the range \hexrange{100}{1FF};
+with probability $\frac{1}{8}$ it's in the range \hexrange{200}{2FF};
+with probability $\frac{1}{16}$ it's \hexrange{300}{3FF};
+and so on.
+(It does not overflow when the MSB reaches \hex{FF}, which happens after the heat death of the universe.)
+Throughout execution, the {\em remaining} value of this timer
+(i.e. the number of cycles from now until termination)
+is visible to the program
+as the read-only 16-bit value at memory address \hexrange{0400}{0401}.
 
-
+On termination, the transient address ranges in the memory map
+(including the stack)
+are discarded.
+The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
+is mapped back to the cellular automata storage.
 
 \begin{table}
 \begin{tabular}{llll}
   \hline
   From & To & Type & Contents \\
   \hline
-  {\tt 0000} & {\tt 00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
-  {\tt 0100} & {\tt 01FF} & RAM (transient) & Stack, initialized to zero \\
-  {\tt 0200} & {\tt 03FF} & RAM (transient) & ``Scratch'' memory, initialized to zero \\
-  {\tt 0400} & {\tt 0401} & ROM (emulator-mapped) & Cycles left before termination \\
-  {\tt 0402} & {\tt 0402} & ROM (emulator-mapped) & Random byte generator \\
-  {\tt 0403} & {\tt 3FFF} & Reserved & Read-only, zero \\
-  {\tt 4000} & {\tt 7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
-  {\tt 8000} & {\tt FEFF} & ROM & Read-only (operating system) \\
-  {\tt FF00} & {\tt FFFF} & ROM & Includes interrupt and reset vectors. All zero \\
+  \hex{0000} & \hex{00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
+  \hex{0100} & \hex{01FF} & RAM (transient) & Stack, initialized to zero \\
+  \hex{0200} & \hex{03FF} & RAM (transient) & ``Scratch'' memory, initialized to zero \\
+  \hex{0400} & \hex{0401} & ROM (emulator-mapped) & Cycles left before termination \\
+  \hex{0402} & \hex{3FFF} & Reserved & Read-only, zero \\
+  \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
+  \hex{8000} & \hex{FFFF} & ROM & Read-only (operating system) \\
   \hline
 \end{tabular}
 \caption{
   \label{tab:MemoryMap}
   Memory map for the 6502 virtual machine of cell $(x,y,z)$.
-  Note that the BREAK vector {\tt FFFC-FFFD} is zero, so execution begins at {\tt 0000}.
 }
 \end{table}
 
@@ -163,6 +177,26 @@ because it is mapped to zero page {\tt 0000-00FF} instead.
 }
 \end{table}
 
+\begin{table}
+\begin{tabular}{ll}
+  \hline
+  Bit(s) & Meaning \\
+  \hline
+  14,15 & Must be \hex{01} \\
+  12,13 & $i$ \\
+  10,11 & $j$ \\
+  8,9 & $k$ \\
+  0-7 & Address within page \\
+  \hline
+\end{tabular}
+\caption{
+  Interpretation of an address in the memory-mapped range \hexrange{4000}{7FFF}
+  as pointing to a cell $(x+i-1,y+j-1,z+k-1)$.
+  See Table~\ref{tab:MooreNeighborhood} and Table~\ref{tab:VonNeumannNeighborhood}.
+  Note that $i,j,k, \in \{ 0,1,2 \}$.
+  \label{tab:AddressBits}
+}
+\end{table}
 
 
 
@@ -172,7 +206,7 @@ because it is mapped to zero page {\tt 0000-00FF} instead.
 \cite{Nakamoto2008}
 
 \section*{Acknowledgments}
-Thanks to Chris Evans, Richard Evans, Michael Mateas.
+Thanks to Peter Irvine, Chris Evans, Richard Evans, Michael Mateas.
 
 \bibliographystyle{plain}
 \bibliography{references}
