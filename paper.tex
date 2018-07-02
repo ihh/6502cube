@@ -76,17 +76,17 @@
 
 The cellular automaton (CA) is a $L \times L \times L$ array of cells.
 Cells are indexed $(x,y,z$) where
-$\alpha \leq x \leq \alpha+L$,
-$\beta \leq y \leq \beta+L$,
-$\gamma \leq z \leq \gamma+L$
-and $(\alpha,\beta,\gamma)$ are integers representing global coordinates of this CA.
+$\alpha_x \leq x < \alpha_x+L$,
+$\alpha_y \leq y < \alpha_y+L$,
+$\alpha_z \leq z < \alpha_z+L$
+and $(\alpha_x,\alpha_y,\alpha_z)$ are integers representing global coordinates of this CA.
 
 Each cell has 256 bytes (one ``page'') of state.
 All cells' bytes are initially zero, unless otherwise specified
 (including, implicitly, cells whose coordinates are outside the CA).
 These bytes are the ``storage'' of the virtual machine.
 
-Cells in the CA are updated in a pseudorandom order.
+An {\bf update} of the CA consists of updating each cell in the CA in a pseudorandom order.
 This can be any order that visits all cells uniformly;
 a Mersenne Twister is suitable for this,
 and also for the generation of the random variable {\tt RUNTIME} used to constrain the update (see below).
@@ -141,7 +141,16 @@ On termination, the transient address ranges in the memory map
 (including the stack)
 are discarded.
 The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
-is mapped back to the cellular automata storage.
+is copied back to the cellular automata storage.
+
+\section{Adjacencies}
+
+Consider those cell coordinates $(x,y,z)$ that are outside the CA,
+e.g. $(\alpha_x-1,\alpha_y,\alpha_z)$ or  $(\alpha_x,\alpha_y,\alpha_z + L)$.
+Some of these, specifically those in the Moore neighborhood of cells that are in the CA,
+are a relevant initial condition for the machine,
+since they map to bytes in its addressable memory.
+
 
 \begin{table}
 \begin{tabular}{llll}
@@ -170,6 +179,9 @@ is mapped back to the cellular automata storage.
   Memory map for the 6502 virtual machine of cell $(x,y,z)$,
   using the 26-cell three-dimensional Moore neighborhood.
   All address ranges not defined in this table are read-only and zero; writing to them has no effect.
+  Pages mapping to cells outside the CA (e.g. $x<\alpha_x$ or $x \geq \alpha_x+L$, or similarly for $y,z$)
+  are zero when read (unless otherwise specified),
+  and writing to them has no effect.
 }
 \end{table}
 
@@ -179,6 +191,7 @@ is mapped back to the cellular automata storage.
   \label{tab:VonNeumannNeighborhood}
   Memory map for the 6502 virtual machine of cell $(x,y,z)$,
   using the 6-cell three-dimensional von Neumann neighborhood.
+  This memory map may be considered a subset of the memory map in Table~\ref{tab:MooreNeighborhood}.
 }
 \end{table}
 
