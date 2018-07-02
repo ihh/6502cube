@@ -72,8 +72,10 @@
 
 The cellular automaton is a $L \times L \times L$ array of cells.
 Cells are indexed $(x,y,z$) where $0 \leq x \leq L$, $0 \leq y \leq L$, $0 \leq z \leq L$.
+
 Each cell has 256 bytes (one ``page'') of state.
 All cells' bytes are initially zero.
+This is the ``storage'' of the virtual machine.
 
 Cells are updated in a pseudorandom order.
 This can be any order that visits all cells uniformly.
@@ -87,8 +89,37 @@ the $k$'th bit of $z_i$ is the $3N-3k-3$'th bit of $i$
 
 A cell $(x,y,z)$ is updated by emulating an 8-bit virtual machine.
 The CPU is the MOS Technology 6502 processor.
-The memory map is shown in \ref{tab:MemoryMap},
-with detail for the memory-mapping of adjacent cells in \ref{tab:MooreNeighborhood}.
+The memory map is shown in Table~\ref{tab:MemoryMap}.
+In this memory map, the 27 pages of storage
+for the cell and its 26 neighbors
+in the $3 \times 3 \times 3$ unit cube centered on $(x,y,z)$
+are mapped directly to pages in the RAM of the virtual machine.
+
+The detailed description of the memory map for this $3 \times 3 \times 3$ neighborhood,
+which in cellular automata terminology is
+the {\em three-dimensional Moore neighborhood},
+is given in Table~\ref{tab:MooreNeighborhood}.
+
+The memory map can be understood as the cell $(x+i-1,y+j-1,z+k-1)$
+mapping to page number (64+i*16+j*4+k) with $i,j,k \in \{0,1,2\}$.
+Thus, in a memory-mapped 16-bit address, the bits have the following meanings
+
+\begin{tabular}{ll}
+  \hline
+  Bit(s) & Meaning \\
+  \hline
+  14,15 & Must be {\tt 01} \\
+  12,13 & $i$ \\
+  10,11 & $j$ \\
+  8,9 & $k$ \\
+  0-7 & Address within page \\
+  \hline
+\end{tabular}
+
+Note the exception: cell $(x,y,z)$ is not mapped to {\tt 5500-55FF}
+because it is mapped to zero page {\tt 0000-00FF} instead.
+
+
 
 \begin{table}
 \begin{tabular}{llll}
@@ -100,7 +131,7 @@ with detail for the memory-mapping of adjacent cells in \ref{tab:MooreNeighborho
   {\tt 0200} & {\tt 03FF} & RAM (transient) & ``Scratch'' memory, initialized to zero \\
   {\tt 0400} & {\tt 0401} & ROM (emulator-mapped) & Cycles left before termination \\
   {\tt 0402} & {\tt 0402} & ROM (emulator-mapped) & Random byte generator \\
-  {\tt 0400} & {\tt 3FFF} & ROM & Reserved, zero \\
+  {\tt 0403} & {\tt 3FFF} & Reserved & Read-only, zero \\
   {\tt 4000} & {\tt 7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
   {\tt 8000} & {\tt FEFF} & ROM & Read-only (operating system) \\
   {\tt FF00} & {\tt FFFF} & ROM & Includes interrupt and reset vectors. All zero \\
@@ -119,6 +150,7 @@ with detail for the memory-mapping of adjacent cells in \ref{tab:MooreNeighborho
   \label{tab:MooreNeighborhood}
   Memory map for the 6502 virtual machine of cell $(x,y,z)$,
   using the 26-cell three-dimensional Moore neighborhood.
+  All address ranges not defined in this table are read-only and zero; writing to them has no effect.
 }
 \end{table}
 
@@ -131,25 +163,6 @@ with detail for the memory-mapping of adjacent cells in \ref{tab:MooreNeighborho
 }
 \end{table}
 
-All other bytes are read-only and zero; writing to them has no effect.
-This can be understood as the cell $(x-1+i,y-1+j,z-1+k)$
-mapping to page number (64+i*16+j*4+k) with $i,j,k \in \{0,1,2\}$.
-Thus, in a memory-mapped 16-bit address, the bits have the following meanings
-
-\begin{tabular}{ll}
-  \hline
-  Bit(s) & Meaning \\
-  \hline
-  14,15 & Must be {\tt 01} \\
-  12,13 & $i$ \\
-  10,11 & $j$ \\
-  8,9 & $k$ \\
-  0-7 & Address within page \\
-  \hline
-\end{tabular}
-
-Note the exception: cell $(x,y,z)$ is not mapped to {\tt 5500-55FF}
-because it is mapped to zero page {\tt 0000-00FF} instead.
 
 
 
