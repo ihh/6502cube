@@ -1,4 +1,58 @@
 \documentclass{article}
+
+% Macro to generate neighborhood memory map table
+\newcommand\memtable[1]{
+\begin{tabular}{lll}
+  \hline
+  From & To & Contents \\
+  \hline
+  #1
+  \hline
+\end{tabular}
+}
+
+\newcommand\memrow[4]{
+    {\tt {#1}00} & {\tt {#1}FF} & State of cell $(x#2,y#3,z#4)$ \\
+}
+
+% The \memxyz macro gives a densely-connected (von Neumann) neighborhood
+\newcommand\memz[5]{
+  \memrow{#1}{#4}{#5}{-1}
+  \memrow{#2}{#4}{#5}{}
+  \memrow{#3}{#4}{#5}{+1}
+}
+
+\newcommand\memyz[2]{
+  \memz{{#1}0}{{#1}1}{{#1}2}{#2}{-1}
+  \memz{{#1}4}{{#1}5}{{#1}6}{#2}{}
+  \memz{{#1}8}{{#1}9}{{#1}A}{#2}{+1}
+}
+
+\newcommand\memxyz{
+  \memyz{4}{-1}
+
+  %  \memyz{5}{} includes zero page-mapped cell (x,y,z), which we want to skip, so spell it out without that
+  \memz{50}{51}{52}{}{-1}
+  \memrow{54}{}{}{-1}
+  \memrow{56}{}{}{+1}
+  \memz{58}{59}{5A}{}{+1}
+
+  \memyz{6}{+1}
+}
+
+% The following table is a sparse neighborhood
+\newcommand\vonneumannmap{\memtable{
+  \memrow{45}{-1}{}{}
+  \memrow{51}{}{-1}{}
+  \memrow{54}{}{}{-1}
+  \memrow{56}{}{}{+1}
+  \memrow{59}{}{+1}{}
+  \memrow{65}{+1}{}{}
+}}
+
+% The following neighborhood is dense
+\newcommand\mooremap{\memtable{\memxyz}}
+
 % Document
 \begin{document}
 
@@ -14,7 +68,93 @@
   Blockchain.
 \end{abstract}
 
-\section{Introduction}
+\section{Cellular automata}
+
+The cellular automaton is a $L \times L \times L$ array of cells.
+Cells are indexed $(x,y,z$) where $0 \leq x \leq L$, $0 \leq y \leq L$, $0 \leq z \leq L$.
+Each cell has 256 bytes (one ``page'') of state.
+All cells' bytes are initially zero.
+
+Cells are updated in a pseudorandom order.
+This can be any order that visits all cells uniformly.
+If $L$ is a power of 2, $L = 2^N$ for some integer $N$,
+we can use the simple ordering $0 \leq i \leq 2^{3N}$
+with $(x_i,y_i,z_i)$ defined such that
+the $k$'th bit of $x_i$ is the $3N-3k-1$'th bit of $i$,
+the $k$'th bit of $y_i$ is the $3N-3k-2$'th bit of $i$, and
+the $k$'th bit of $z_i$ is the $3N-3k-3$'th bit of $i$
+(using LSB-0 numbering).
+
+A cell $(x,y,z)$ is updated by emulating an 8-bit virtual machine.
+The CPU is the MOS Technology 6502 processor.
+The memory map is shown in \ref{tab:MemoryMap},
+with detail for the memory-mapping of adjacent cells in \ref{tab:MooreNeighborhood}.
+
+\begin{table}
+\begin{tabular}{llll}
+  \hline
+  From & To & Type & Contents \\
+  \hline
+  {\tt 0000} & {\tt 00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
+  {\tt 0100} & {\tt 01FF} & RAM (transient) & Stack, initialized to zero \\
+  {\tt 0200} & {\tt 03FF} & RAM (transient) & ``Scratch'' memory, initialized to zero \\
+  {\tt 0400} & {\tt 0401} & ROM (emulator-mapped) & Cycles left before termination \\
+  {\tt 0402} & {\tt 0402} & ROM (emulator-mapped) & Random byte generator \\
+  {\tt 0400} & {\tt 3FFF} & ROM & Reserved, zero \\
+  {\tt 4000} & {\tt 7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
+  {\tt 8000} & {\tt FEFF} & ROM & Read-only (operating system) \\
+  {\tt FF00} & {\tt FFFF} & ROM & Includes interrupt and reset vectors. All zero \\
+  \hline
+\end{tabular}
+\caption{
+  \label{tab:MemoryMap}
+  Memory map for the 6502 virtual machine of cell $(x,y,z)$.
+  Note that the BREAK vector {\tt FFFC-FFFD} is zero, so execution begins at {\tt 0000}.
+}
+\end{table}
+
+\begin{table}
+\mooremap
+\caption{
+  \label{tab:MooreNeighborhood}
+  Memory map for the 6502 virtual machine of cell $(x,y,z)$,
+  using the 26-cell three-dimensional Moore neighborhood.
+}
+\end{table}
+
+\begin{table}
+\vonneumannmap
+\caption{
+  \label{tab:VonNeumannNeighborhood}
+  Memory map for the 6502 virtual machine of cell $(x,y,z)$,
+  using the 6-cell three-dimensional von Neumann neighborhood.
+}
+\end{table}
+
+All other bytes are read-only and zero; writing to them has no effect.
+This can be understood as the cell $(x-1+i,y-1+j,z-1+k)$
+mapping to page number (64+i*16+j*4+k) with $i,j,k \in \{0,1,2\}$.
+Thus, in a memory-mapped 16-bit address, the bits have the following meanings
+
+\begin{tabular}{ll}
+  \hline
+  Bit(s) & Meaning \\
+  \hline
+  14,15 & Must be {\tt 01} \\
+  12,13 & $i$ \\
+  10,11 & $j$ \\
+  8,9 & $k$ \\
+  0-7 & Address within page \\
+  \hline
+\end{tabular}
+
+Note the exception: cell $(x,y,z)$ is not mapped to {\tt 5500-55FF}
+because it is mapped to zero page {\tt 0000-00FF} instead.
+
+
+
+
+\section{Blockchain description}
 
 \cite{Nakamoto2008}
 
