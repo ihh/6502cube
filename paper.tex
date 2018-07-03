@@ -77,7 +77,10 @@
   and communications between adjacent nodes on the 3D grid are modeled as blockchain mergers.
 \end{abstract}
 
-\section{Cellular automata}
+\section{Cellular Automaton}
+
+\subsection{Storage}
+\label{sec:Storage}
 
 The cellular automaton (CA) is a $L \times L \times L$ array of cells,
 located at an offset $(\alpha_x,\alpha_y,\alpha_z)$ in integer 3-space.
@@ -86,10 +89,12 @@ $\alpha_x \leq x < \alpha_x+L$,
 $\alpha_y \leq y < \alpha_y+L$,
 $\alpha_z \leq z < \alpha_z+L$.
 
-Each cell has 256 bytes (one ``page'') of state.
+Each cell has 256 bytes (one page) of state.
 All cells' bytes are initially zero, unless otherwise specified
-(including, implicitly, cells whose coordinates are outside the CA).
-These bytes are the ``storage'' of the virtual machine.
+(including, implicitly, cells whose coordinates are outside the CA; see also Section~\ref{sec:Blankets}).
+These bytes are the storage of the virtual machine.
+
+\subsection{Virtual machine}
 
 An {\bf update} of the CA consists of updating each cell in the CA in a pseudorandom order.
 This can be any order that visits $L^3$ uniformly-random selected cells;
@@ -148,7 +153,7 @@ are discarded.
 The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
 is copied back to the cellular automata storage.
 
-\section{Blankets}
+\subsection{Blankets}
 \label{sec:Blankets}
 
 Consider those cell coordinates $(x,y,z)$ that are outside the CA,
@@ -158,7 +163,7 @@ are a relevant initial condition for the machine,
 since they map to bytes in its addressable memory.
 
 We refer to these cells as the {\bf blanket} of the CA.
-Previously, we specified that their state was implicitly initialized to zero.
+Earlier, in Section~\ref{sec:Storage}, we specified that the state of these cells was implicitly initialized to zero.
 More generally, we may refer to the initial (and perpetual, throughout the execution of an update)
 state of these cells as the CA's {\bf blanket state}.
 This blanket state is zero until otherwise specified, but may be affected
@@ -169,19 +174,22 @@ as for example by the blockchain of Section~\ref{sec:Blockchain}.
 \label{sec:Blockchain}
 
 The CA has an associated blockchain, defined as in \cite{Nakamoto2008}.
-The proof-of-work is adjusted to include updating the CA,
-and the mining incentive is adjusted to include redemption of coins minted by adjacent CAs
+Updates are incentivized by mining,
+and the reward for mining is adjusted to include redemption of coins mined by adjacent CA blockchains
 (this also updates the blanket cells accounted for by those CAs).
 
-Specifically, let the proof-of-work include $C \times Z$ updates of the CA,
-where $Z$ is the number of zeroes required by the network at the start of the hash function for a valid block,
-and $C$ is the number of cycles expected in the blockchain update time
+\subsection{Updates}
+
+A valid block must include the $256 \times L^3$ bytes describing the state of the CA following $C$ updates
+from the state at the end of the previous block.
+$C$ is the number of cycles per cell expected in the blockchain update time
 (which for bitcoin is 10 minutes).
 
 Let the definition of a block include the coordinates $(\alpha_x,\alpha_y,\alpha_z,L)$;
 these coordinates, together with the number of updates,
-must be used to seed the random number generator for the $Z$ updates,
-and the block must include the $256 L^3$ bytes describing the state of the CA following the update.
+must be used to seed the random number generator for the $Z$ updates.
+
+\subsection{Writes}
 
 Any transaction in the blockchain may include, as additional data,
 a {\bf write operation} which modifies the state of one or more cells of the CA.
@@ -199,6 +207,8 @@ to discourage frivolous edits.
 (Suggest $W=1$ to keep this simple.
 Minting a coin lets you write a cell.
 Seems fair.)
+
+\subsection{Adjacencies}
 
 The block may include sections of blockchain from {\bf adjacent cellular automata},
 defined to be CAs with co-ordinates containing cells that
