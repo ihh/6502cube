@@ -26,16 +26,38 @@
 
 \section{Introduction}
 
-Blockchains are useful for cryptocurrencies.
-They can also be used to drive computation on a distributed virtual machine.
-In the Ethereum network, this is used to implement smart contracts.
-Here we describe a different use: the simulation of a virtual world of general cellular automata.
+Cellular Automata (CA) are a common model for universal computation.
+The idea that every pixel (or voxel) of the world computes and talks to its neighbors
+is an appealing synthesis of concepts from natural science such as time- and space-invariance, and wave propagation.
+Cellular automata (along with agent models, lattice gases, and other discretized frameworks) have been useful models in physics and biology,
+and have also been used in computer games and artificial life experiments (A-Life).
 
-The cellular automata we develop are both universal and familiar, consisting of a three-dimensional grid of 6502 microprocessors broken into blocks.
+Although straightforward to implement, cellular automata experiments are limited by the resources available to an individual;
+furthermore, there are no well-established ways to bridge different experiments (e.g. to make a link between separate CA worlds).
+Here, we describe a way to do this using the distributed timestamp service provided by a proof-of-work blockchain.
+
+The blockchain was introduced for cryptocurrencies \cite{Nakamoto2008}.
+It can also be used to drive computation on a distributed virtual machine.
+In the Ethereum network, this is used to implement smart contracts.
+Here we describe a different (simpler) use: the simulation of a virtual world of generic cellular automata.
+
+The cellular automata we develop as a motivating example are both universal and familiar, consisting of a three-dimensional grid of 6502 microprocessors broken into blocks.
 The blockchain framework incentivizes simulation of individual cell blocks, as well as data-sharing between blocks.
 
-This framework is intended for recreational purposes: the coins mined by the system
+I chose the 6502 processor as the virtual machine for several reasons.
+First, I like it, and so do many others, which is probably why it still gets attention 40 years after it appeared \cite{JonasKording2017}.
+Second, it's simple, and compact (a slim memory footprint per cell is important for a CA; for example, 32 bits per instruction is too much).
+Why not use RedCode, the programming language of Core War \cite{Dewdney1984}?
+Core War is well-established among afficionados, and is studied by A-Life researchers \cite{VowkWaitSchmidt2004},
+but it's poorly suited to spatially mapped simulations, since Core War programs run in a linear memory space.
+Other prior A-Life frameworks have used virtual machines derived from 80x86 processors, such as Avida \cite{AdamiBrown1994}.
+To define a system with enough precision that it can be implemented on a blockchain, it's helpful to stay close to a machine that actually exists,
+so we use 6502 with only a few minimal extra functions that are all memory-mapped, rather like hardware might be on a real 6502 system.
+
+The blockchain framework developed here is intended for recreational purposes: the coins mined by the system
 have no ostensible purpose other than regulating the rate at which participants can write to the simulated world.
+They might play the role of a score in a game world, measuring the contribution of the owner to keeping the world running.
+However, alternate scores (metrics) of success are possible in the world we describe, such as the popularity or success of programs that one has introduced into the world.
 
 \section{Methods}
 
@@ -57,8 +79,11 @@ In designing general cellular automata running virtual machines,
 it is useful to distinguish between a cell's read-only memory (ROM)
 and its random-access memory (RAM).
 The former is useful for storing the cell's operating program (or immutable parts of it); the latter, for tracking its internal state.
-As an analogy, programs that don't use the operating system are, by necessity, small and simple (c.f. cells without ROM);
-programs that don't use variables may be inflexible (c.f. cells without RAM).
+
+We allow cells to have both types of memory, RAM (for mutable state) and ROM (for immutable behavior).
+It is perfectly possible to write cells with only one type of memory.
+As an analogy, automata without ROM are like programs that run in user space without calling the operating system; they are by necessity small and simple.
+Automata without RAM are like stateless protocols: they scale well, but they may be inflexible for some purposes.
 
 Each cell has 256 bytes (one page) of updatable state (RAM).
 All cells' bytes are initially zero, unless otherwise specified
@@ -81,7 +106,8 @@ is a suitable random number generator (RNG) for this and other random numbers re
 \subsection{Virtual machine}
 
 A cell $(x,y,z)$ is updated by emulating a virtual machine.
-In designing this virtual machine we want to use a well-known, simple architecture with small programs.
+In designing this virtual machine we want to use a well-known, simple architecture with small programs,
+that is transparently universal.
 The interface between the virtual machine and the cell block
 needs to be such that the cell's ROM and the RAM, as well as the RAM of its neighbors,
 are accessible to the code running in the virtual machine.
@@ -108,50 +134,65 @@ because it is mapped to zero page (\hexrange{0000}{00FF}) instead.
 \label{sec:Timeline}
 
 At the beginning of an update,
-the registers {\tt A,X,Y} are initialized to zero,
-all status flags (register {\tt P}) are set to zero,
-the stack pointer (register {\tt SP}) is set to \hex{FF},
-the program counter {\tt PC} is set to \hex{0000},
+the registers \code{A,X,Y} are initialized to zero,
+all status flags (register \code{P}) are set to zero,
+the stack pointer (register \code{SP}) is set to \hex{FF},
+the program counter \code{PC} is set to \hex{0000},
+the cellular automata states are copied into memory (to zero page and other pages shown in Table~\ref{tab:MooreNeighborhood}),
 and execution begins at the first byte of zero page.
 
 Execution is terminated
 when a software interrupt or undefined instruction is encountered,
-or by non-maskable interrupt after
-completion of the first instruction that takes the cycle count past {\tt STOPTIME} cycles,
-where {\tt STOPTIME} is a 16-bit integer.
-For notes on how {\tt STOPTIME} is chosen, see Section~\ref{sec:Timeouts}.
+or by non-maskable interrupt after completion of the first instruction that takes the cycle count past \code{STOPTIME} cycles,
+where \code{STOPTIME} is a 16-bit integer.
+For notes on how \code{STOPTIME} is chosen, see Section~\ref{sec:Timeouts}.
 
 On termination, the transient address ranges in the memory map
-(including the stack)
-are discarded.
-The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
-is copied back to the cellular automata storage.
+(including the stack) are discarded.
+If execution was terminated by timeout, then the rest of memory is also discarded,
+and the state of the CA is restored
+Otherwise, if the program exited (by software interrupt or undefined opcode) before timing out,
+the neighborhood memory-mapped pages (zero page and other pages in the range \hexrange{4000}{7FFF}, see Table~\ref{tab:MooreNeighborhood})
+are copied back to the cellular automata storage.
 
 \subsection{Timeouts}
 \label{sec:Timeouts}
 
-To encourage quicker programs,
-we make the number of cycles available to each update a random variable, instead of a fixed limit.
+We need to set a limit on how many cycles a program is allowed to run for (i.e. \code{STOPTIME}).
+The problem is that, if we set a hard limit, randomly emergent programs will tend to hit that limit
+(e.g. by entering infinite loops)
+and human programmers will be tempted to surf close to it.
 
-The random variable {\tt STOPTIME} is generated using the cell block RNG (Section~\ref{sec:UpdatingCellBlock})
-in the following way:
+To encourage quicker programs,
+we make \code{STOPTIME} a random variable, instead of a fixed limit.
+We also require that programs exit gracefully (returning control to the emulator via a software interrupt)
+if their changes are to be committed to storage.
+As well as discouraging slow programs, this makes it easier to write programs that are atomic (all-or-nothing) in their effects.
+Programs can check the \code{TIME} timer at \hexrange{FFF6}{FFF7} to see how many cycles are available.
+
+The random variable \code{STOPTIME} is generated using the cell block RNG (Section~\ref{sec:UpdatingCellBlock})
+and the following algorithm:
 \begin{itemize}
-\item Sample $m$ from the following (bounded geometric) distribution
+\item Let $r$ and $s$ denote random 16-bit integers
+\item Let $z$ be the number of leading zero bits of $s$, so $0 \leq z \leq 16$
+\item Let $m = \mbox{max}(z,13) + 2$. The distribution of $m$ is now given by
   \[
   P(m=k) = \left\{ \begin{array}{ll} 2^{1-k} & \mbox{if $2 \leq k < 15$} \\ 2^{-13} & \mbox{if $k = 15$} \end{array} \right.
-    \]
-  \item Let $r$ denote a random 16-bit integer
-  \item Set {\tt STOPTIME} to $(2^m \vee (r \wedge (2^m - 1))$
+  \]
+\item Set \code{STOPTIME} to $(2^m \vee (r \wedge (2^m - 1))$
 \end{itemize}
 
-The mean value of {\tt STOPTIME} is 44.5 cycles,
+% This Perl one-liner calculates the mean value of STOPTIME and some related probabilities
+% perl -e '$e=0;for($m=2;$m<=15;++$m){$p=($m<15?(2**(1-$m)):(2**(-13)));$b=2**$m;$s=($b+($b-1)/2);print"$p $t $s\n";$e+=$p*$s;$t+=$p}print"$t $e\n"'
+
+The mean value of \code{STOPTIME} is 44.5 cycles,
 but there is a small ($\sim$0.5\%) chance that it's over 1,000 cycles,
 and an even smaller ($\sim$0.05\%) chance that it's over 10,000 cycles.
 
 \subsection{Special addresses}
 
 There are several emulator-mapped memory addresses that perform special functions:
-the read-only \code{TIME} (\hexrange{FFF6}{FFF7}), which gives the time until termination;
+the read-only \code{TIME} (\hexrange{FFF6}{FFF7}), which is the number of cycles until forced termination;
 the write-only \code{SWAP} (\hex{FFF8}), which facilitates diffusion models;
 and the read-only \code{RAND} (\hex{FFF9}), which provides a random number generator.
 
@@ -173,9 +214,11 @@ Only the lower 6 bits of the written byte are relevant, and specify a cell in th
 in the same way as bits 8-13 of a memory-mapped storage address (c.f. Table~\ref{tab:AddressBits}).
 
 Writing a byte to \code{SWAP} has the effect of swapping the storage and operating system pages associated with the current cell and the specified neighboring cell,
-and then terminating execution.
+and then triggering a software interrupt, terminating execution.
 If the neighboring cell is outside the cell block (see Section~\ref{sec:AdjacentCells}),
 this updates the current cell (and its operating system) but has no effect on the neighboring cell.
+If the written byte is not a valid index byte, then there is no effect.
+A software interrupt is triggered, and program execution terminated, regardless of whether the written byte is a valid index pointing to a cell within the cell block.
 
 Reading a byte from address \code{SWAP} always yields zero, and has no other effect.
 
@@ -314,7 +357,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
 }
 
 \newcommand\memrow[4]{
-    {\tt {#1}00} & {\tt {#1}FF} & State of cell $(x#2,y#3,z#4)$ \\
+    \hex{{#1}00} & \hex{{#1}FF} & State of cell $(x#2,y#3,z#4)$ \\
 }
 
 % The \memxyz macro gives a densely-connected (von Neumann) neighborhood
