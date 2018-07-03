@@ -15,61 +15,97 @@
 
 
 \begin{abstract}
-  As a toy illustration,
-  this paper describes a blockchain for cellular automata
-  comprising a 3D array of virtual machines.
-  Each machine emulates a 6502 processor with access to one page (256 bytes) of persistent storage,
+  As a toy example of incentivized, distributed spatial computation,
+  this paper develops a blockchain for cellular automata
+  comprising a 3D array of virtual 6502 processors, each with access to one page (256 bytes) of persistent storage,
   as well as the pages of its neighbors (and a read-only operating system).
   Simulation of this machine is incentivized via mining,
   writes are limited by transaction fee,
   and communications between adjacent nodes on the 3D grid are modeled as blockchain mergers.
 \end{abstract}
 
-\section{Cellular automata}
+\section{Introduction}
 
-\subsection{Storage}
-\label{sec:Storage}
+Blockchains are useful for cryptocurrencies.
+They can also be used to drive computation on a distributed virtual machine.
+In the Ethereum network, this is used to implement smart contracts.
+Here we describe a different use: the simulation of a virtual world of general cellular automata.
 
-The cellular automaton (CA) is a $L \times L \times L$ array of cells,
+The cellular automata we develop are both universal and familiar, consisting of a three-dimensional grid of 6502 microprocessors broken into blocks.
+The blockchain framework incentivizes simulation of individual cell blocks, as well as data-sharing between blocks.
+
+This framework is intended for recreational purposes: the coins mined by the system
+have no ostensible purpose other than regulating the rate at which participants can write to the simulated world.
+
+\section{Methods}
+
+\subsection{Cell blocks}
+
+Every cell of the cellular automata has a unique integer 3-space co-ordinate $(x,y,z)$.
+
+A single {\bf cell block} of the cellular automata is a $L \times L \times L$ array of cells,
 located at an offset $(\alpha_x,\alpha_y,\alpha_z)$ in integer 3-space.
-Cells in the CA are indexed $(x,y,z$) where
+Cells in the cell block are indexed $(x,y,z$) where
 $\alpha_x \leq x < \alpha_x+L$,
 $\alpha_y \leq y < \alpha_y+L$,
 $\alpha_z \leq z < \alpha_z+L$.
 
-Each cell has 256 bytes (one page) of volatile state.
+\subsection{Read-only and random-access storage}
+\label{sec:Storage}
+
+In designing general cellular automata running virtual machines,
+it is useful to distinguish between a cell's read-only memory (ROM)
+and its random-access memory (RAM).
+The former is useful for storing the cell's operating program (or immutable parts of it); the latter, for tracking its internal state.
+As an analogy, programs that don't use the operating system are, by necessity, small and simple (c.f. cells without ROM);
+programs that don't use variables may be inflexible (c.f. cells without RAM).
+
+Each cell has 256 bytes (one page) of updatable state (RAM).
 All cells' bytes are initially zero, unless otherwise specified
-(including, implicitly, cells whose coordinates are outside the CA; see also Section~\ref{sec:AdjacentCells}).
+(including, implicitly, cells whose coordinates are outside the cell block; see also Section~\ref{sec:AdjacentCells}).
 These bytes are the storage of the virtual machine.
 
-Each cell also has a 32-kilobyte read-only operating system.
+Each cell also has a 32-kilobyte read-only operating system (ROM).
 Most cells share the same operating system, and operating system changes should be rare,
 so the O/S for a cell can be represented using a compact hash key such as SHA-256.
 
+\subsection{Updating the cell block}
+\label{sec:UpdatingCellBlock}
+
+An {\bf update} of the cell block consists of updating each cell in a pseudorandom order.
+This can be any order that visits $L^3$ uniformly-random selected cells in a well-defined pseudorandom order;
+a Mersenne Twister (MT19937),
+seeded on the tuple $(\alpha_x,\alpha_y,\alpha_z,L,U)$ where $U$ is the number of updates,
+is a suitable random number generator (RNG) for this and other random numbers required during the update.
+
 \subsection{Virtual machine}
 
-An {\bf update} of the CA consists of updating each cell in the CA in a pseudorandom order.
-This can be any order that visits $L^3$ uniformly-random selected cells;
-a Mersenne Twister is suitable for this.
+A cell $(x,y,z)$ is updated by emulating a virtual machine.
+In designing this virtual machine we want to use a well-known, simple architecture with small programs.
+The interface between the virtual machine and the cell block
+needs to be such that the cell's ROM and the RAM, as well as the RAM of its neighbors,
+are accessible to the code running in the virtual machine.
 
-A cell $(x,y,z)$ is updated by emulating an 8-bit virtual machine.
-The CPU is the MOS Technology 6502 processor.
-The memory map is shown in Table~\ref{tab:MemoryMap}.
+After some experiments with 32-bit ARM RISC architectures,
+I settled on the 8-bit MOS Technology 6502 processor for a CPU.
+The corresponding 16-bit memory map is shown in Table~\ref{tab:MemoryMap}.
+
 In this memory map, the 27 pages of storage
 for the cell and its 26 neighbors
 in the $3 \times 3 \times 3$ unit cube centered on $(x,y,z)$
+(in cellular automata terminology, the {\em three-dimensional Moore neighborhood})
 are mapped directly to bytes in the address range \hexrange{4000}{7FFF} of the virtual machine.
-
-The detailed description of the memory map for this $3 \times 3 \times 3$ neighborhood,
-which in cellular automata terminology is
-the {\em three-dimensional Moore neighborhood},
+The detailed description of this part of the memory map
 is given in Table~\ref{tab:MooreNeighborhood}.
 
-The neighborhood memory map can be understood as the cell $(x+i-1,y+j-1,z+k-1)$
+The Moore neighborhood memory map can be understood as the cell $(x+i-1,y+j-1,z+k-1)$
 mapping to page number (64+i*16+j*4+k) with $i,j,k \in \{0,1,2\}$.
 Thus, in a memory-mapped 16-bit address, the bits have the interpretation shown in Table~\ref{tab:AddressBits}.
 Note the exception: cell $(x,y,z)$ is not mapped to page 85 (\hexrange{5500}{55FF})
 because it is mapped to zero page (\hexrange{0000}{00FF}) instead.
+
+\subsection{Timeline of a cell update}
+\label{sec:Timeline}
 
 At the beginning of an update,
 the registers {\tt A,X,Y} are initialized to zero,
@@ -81,7 +117,9 @@ and execution begins at the first byte of zero page.
 Execution is terminated
 when a software interrupt or undefined instruction is encountered,
 or by non-maskable interrupt after
-completion of the first instruction that takes the cycle count past 65,536 cycles.
+completion of the first instruction that takes the cycle count past {\tt STOPTIME} cycles,
+where {\tt STOPTIME} is a 16-bit integer.
+For notes on how {\tt STOPTIME} is chosen, see Section~\ref{sec:Timeouts}.
 
 On termination, the transient address ranges in the memory map
 (including the stack)
@@ -89,68 +127,115 @@ are discarded.
 The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
 is copied back to the cellular automata storage.
 
+\subsection{Timeouts}
+\label{sec:Timeouts}
+
+To encourage quicker programs,
+we make the number of cycles available to each update a random variable, instead of a fixed limit.
+
+The random variable {\tt STOPTIME} is generated using the cell block RNG (Section~\ref{sec:UpdatingCellBlock})
+in the following way:
+\begin{itemize}
+\item Sample $m$ from the following (bounded geometric) distribution
+  \[
+  P(m=k) = \left\{ \begin{array}{ll} 2^{1-k} & \mbox{if $2 \leq k < 15$} \\ 2^{-13} & \mbox{if $k = 15$} \end{array} \right.
+    \]
+  \item Let $r$ denote a random 16-bit integer
+  \item Set {\tt STOPTIME} to $(2^m \vee (r \wedge (2^m - 1))$
+\end{itemize}
+
+The mean value of {\tt STOPTIME} is 44.5 cycles,
+but there is a small ($\sim$0.5\%) chance that it's over 1,000 cycles,
+and an even smaller ($\sim$0.05\%) chance that it's over 10,000 cycles.
+
 \subsection{Special addresses}
 
 There are several emulator-mapped memory addresses that perform special functions:
-the write-only address \code{SWAP} (\hex{FFF8}), which facilitates diffusion models,
-and the read-only address \code{RAND} (\hex{FFF9}), which provides a random number generator.
+the read-only \code{TIME} (\hexrange{FFF6}{FFF7}), which gives the time until termination;
+the write-only \code{SWAP} (\hex{FFF8}), which facilitates diffusion models;
+and the read-only \code{RAND} (\hex{FFF9}), which provides a random number generator.
 
+These are described in the sections below.
+
+\subsection{Operating system updates}
+
+The machine architecture described so far is adequate if the operating system ROM is shared by every cell on the block.
+To allow O/S updates to be propagated across the block, we introduce two specific mechanisms.
+Guiding the design of this mechanism are the following two principles:
+\begin{itemize}
+\item If a cell writes another cell's RAM, then it should expect that cell's ROM to be the same as its own.
+\item Cells should, nevertheless, be allowed to diffuse past each other without necessarily overwriting each others' ROM.
+\end{itemize}
+
+The first mechanism for O/S propagation is the write-only \code{SWAP} address, \hex{FFF8}.
 Any value written to \code{SWAP} is interpreted as the index of a neighboring cell.
 Only the lower 6 bits of the written byte are relevant, and specify a cell in the $3 \times 3 \times 3$ Moore neighborhood
 in the same way as bits 8-13 of a memory-mapped storage address (c.f. Table~\ref{tab:AddressBits}).
 
 Writing a byte to \code{SWAP} has the effect of swapping the storage and operating system pages associated with the current cell and the specified neighboring cell,
 and then terminating execution.
-If the neighboring cell is outside the CA (see Section~\ref{sec:AdjacentCells}),
+If the neighboring cell is outside the cell block (see Section~\ref{sec:AdjacentCells}),
 this updates the current cell (and its operating system) but has no effect on the neighboring cell.
 
-Writes to \code{SWAP} are not the only means by which operating system code is propagated across the CA.
+Reading a byte from address \code{SWAP} always yields zero, and has no other effect.
+
+As mentioned above, the \code{SWAP} interface is one of two mechanisms by which operating system code is propagated across the cell block.
+The second mechanism is built into the memory-mapped storage interface itself.
 During an update, writing any byte to any neighboring cell, i.e. any cell in the memory-mapped storage (\hexrange{4000}{7FFF}),
 has the implicit effect of copying the operating system pages from the current cell to the neighbor.
 This is handled transparently by the emulator without consuming any additional cycles.
 
+\subsection{Random numbers}
+
+The read-only \code{RAND} address, \hex{FFF9}, is a random number generator.
 Reading a byte from \code{RAND} yields 8 random bits, newly sampled with each read (i.e. multiple reads yield different results).
+The random numbers are provided by the cell block's RNG (Section~\ref{sec:UpdatingCellBlock}).
+
+\subsection{Timer}
+
+The read-only 16-bit \code{TIME} address, \hexrange{FFF6}{FFF7}, gives the number of cycles before the program is terminated.
+(More precisely, this address is initialized to \code{STOPTIME} before the first instruction is executed,
+and decremented after completion of each instruction.)
 
 \subsection{Adjacent cells}
 \label{sec:AdjacentCells}
 
-Consider those cell coordinates $(x,y,z)$ that are outside the CA,
+Consider those cell coordinates $(x,y,z)$ that are outside the cell block,
 e.g. $(\alpha_x-1,\alpha_y,\alpha_z)$ or  $(\alpha_x,\alpha_y,\alpha_z + L)$.
-Some of these, specifically those in the Moore neighborhood of cells that are in the CA,
+Some of these, specifically those in the Moore neighborhood of cells that are in the cell block,
 are a relevant initial condition for the machine,
 since they map to bytes in its addressable memory.
 
-We refer to these cells as the CA's {\bf adjacent cells}.
+We refer to these cells as the cell block's {\bf adjacent cells}.
 Earlier, in Section~\ref{sec:Storage}, we specified that the state of these cells was implicitly initialized to zero.
 More generally, we may refer to the initial (and perpetual, throughout the execution of an update)
-state of these cells as the CA's {\bf adjacent state}.
+state of these cells as the cell block's {\bf adjacent state}.
 This adjacent state is zero until otherwise specified, but may be affected
-by interactions with neighboring CAs in the infinite vector space,
+by interactions with neighboring cell blocks in the infinite vector space,
 as for example by the blockchain of Section~\ref{sec:Blockchain}.
 
-\section{Blockchain}
+\subsection{Blockchain}
 \label{sec:Blockchain}
 
-The CA has an associated blockchain, defined as in \cite{Nakamoto2008}.
+The cell block has an associated blockchain, defined as in \cite{Nakamoto2008}.
 Updates are incentivized by mining,
-and the reward for mining is adjusted to include redemption of coins mined by adjacent CA blockchains
-(this also updates the adjacent cell states accounted for by those CAs).
+and the reward for mining is adjusted to include redemption of coins mined by adjacent cell-block blockchains
+(this also updates the adjacent cell states accounted for by those cell blocks).
 
-\subsection{Updates}
+\subsection{Driving updates with the blockchain}
 
-A valid block must include the $256 \times L^3$ bytes describing the state of the CA following $C$ updates
+A valid block must include the $256 \times L^3$ bytes describing the state of the cell block following $C$ updates
 from the state at the end of the previous block.
 $C$ is the number of cycles per cell expected in the blockchain update time
 (which for bitcoin is 10 minutes).
 
-Let the definition of a block include the coordinates $(\alpha_x,\alpha_y,\alpha_z,L)$;
-these coordinates, together with the number of updates,
-must be used to seed the random number generator for the $Z$ updates.
+Let the definition of a block include the coordinates $(\alpha_x,\alpha_y,\alpha_z,L,U)$
+used to seed the cell block's random number generator and identify the cell block in space and time.
 
 \subsection{Write operations}
 
 Any transaction in the blockchain may include, as additional data,
-a {\bf write operation} which modifies the state of one or more cells of the CA.
+a {\bf write operation} which modifies the state of one or more cells of the cell block.
 This modification is considered to take place after the emulation of $Z$ update cycles
 which is part of the proof-of-work protocol.
 The order in which such write operations are applied,
@@ -165,53 +250,55 @@ to discourage frivolous edits.
 If (for example) $W=1$, then minting a coin lets you write a cell.
 
 As well as writing the (volatile) state of the cell, you can write its 32K operating system
-(mapped to address range \hexrange{8000}{FFF7} in the virtual machine; the last 8 bytes, corresponding to \hexrange{FFF8}{FFFF}, are ignored).
+(mapped to address range \hexrange{8000}{FFEF} in the virtual machine; the last 16 bytes, corresponding to \hexrange{FFF0}{FFFF}, are ignored).
 After the first time an operating system is used in the blockchain, it can be referred to by SHA-256 hash, to save space.
 
 \subsection{Adjacent segments}
 
 The block may include sections of blockchain from {\bf adjacent cellular automata},
-defined to be CAs with co-ordinate ranges that
-overlap with the current CA's adjacent cells,
+defined to be cell blocks with co-ordinate ranges that
+overlap with the current cell block's adjacent cells,
 but no cells that overlap with
-cells in the co-ordinate range of this CA (or any other CA previously encountered in the blockchain,
-except the adjacent CA itself).
-These blockchain segments from adjacent CAs are called {\bf adjacent segments}.
+cells in the co-ordinate range of this cell block (or any other cell block previously encountered in the blockchain,
+except the adjacent cell block itself).
+These blockchain segments from adjacent cell blocks are called {\bf adjacent segments}.
 
 Adjacent segments must be consistent with any previously-observed adjacent segments
-earlier on the current blockchain (that is, they must not involve conflicting CA,
-and they must otherwise be consistent continuations of the adjacent CA's blockchain).
+earlier on the current blockchain (that is, they must not involve conflicting cell block,
+and they must otherwise be consistent continuations of the adjacent cell block's blockchain).
 They may, themselves, recursively refer to parts of the current blockchain as their own adjacent segments,
 summarized by their hashes for compactness.
 
-When a block includes an adjacent segment, the CA's adjacent cell state is updated to match the adjacent segment.
-Regular mutual inclusion of adjacent segments from adjacent CAs' blockchains
-corresponds to keeping a bidirectional read-only interface open between those CAs.
+When a block includes an adjacent segment, the cell block's adjacent cell state is updated to match the adjacent segment.
+Regular mutual inclusion of adjacent segments from adjacent cell blocks' blockchains
+corresponds to keeping a bidirectional read-only interface open between those cell blocks.
 
 To incentivize this,
 inclusion of an adjacent segment in a block for the first time
 accrues an additional benefit of $C/R$ coins to the miner of the block,
 where $C$ is the number of {\bf redeemable coins} mined or accrued (via more distant, proximal adjacencies)
-by cells in the adjacent CA,
-and $R$ is the {\bf redemption rate}, the number of redeemable coins in adjacent CAs
-required to accrue a coin in the current CA.
+by cells in the adjacent cell block,
+and $R$ is the {\bf redemption rate}, the number of redeemable coins in adjacent cell blocks
+required to accrue a coin in the current cell block.
 It is of course necessary to have $R>2$ to prevent an explosion of redeemable coins in 3D space;
 another notable value is $R=26$, which (in the densely-connected Moore neighborhood)
 ensures that the number of coins redeemed is less than the number of coins mined locally
 (the corresponding value for the von Neumann neighborhood of Table~\ref{tab:VonNeumannNeighborhood}
 is much lower, at $R=6$).
 
-Setting the parameters $L$ (CA size) and $C$ (updates per block)
+\subsection{Parameters}
+
+Setting the parameters $L$ (cell block size) and $C$ (updates per block)
 is a little arbitrary, but can be guided by target memory footprint and clock rate.
-For memory, the CA state requires $256 \times L^3$ bytes.
-For clock rate, if we ran a 6502 CPU at 1Mhz for 10 minutes, with a mean of $2^{15}$ cycles per cellular update,
-we would update the whole board $10^6 \times T / (2^{15} \times L^3)$ times
+For memory, the cell block state requires $256 \times L^3$ bytes.
+For clock rate, if we ran a 6502 CPU at 1Mhz for 10 minutes, with a mean of $44.5$ cycles per cellular update,
+we would update the whole cell block $10^6 \times T / (44.5 \times L^3)$ times
 where $T$ is the time in seconds between blocks ($T=36,000$ for bitcoin).
 Faster clocks and protocols no doubt allow better numbers,
 but considering these values and estimating conservatively,
 we recommend $L=64$ and $C=4$ so that
 each cell is updated every few minutes;
-each block takes at most 64Mb to describe the CA state;
+each block takes at most 64Mb to describe the cell block state;
 and the computational burden is roughly comparable to a 6502 CPU.
 
 % Tables, macros
@@ -279,7 +366,9 @@ and the computational burden is roughly comparable to a 6502 CPU.
   \hex{0200} & \hex{03FF} & RAM (transient) & Scratch memory: initialized to zero \\
   \hex{0400} & \hex{3FFF} & ROM & Reserved: zero \\
   \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
-  \hex{8000} & \hex{FFF7} & ROM & Operating system \\
+  \hex{8000} & \hex{FFF0} & ROM & Operating system \\
+  \hex{FFF0} & \hex{FFF5} & ROM & Reserved; zero \\
+  \hex{FFF6} & \hex{FFF7} & Read-only & \code{TIME}: number of cycles left until termination \\
   \hex{FFF8} & \hex{FFF8} & Write-only & \code{SWAP}: swap storage page with neighbor \\
   \hex{FFF9} & \hex{FFF9} & Read-only & \code{RAND}: random byte generator \\
   \hex{FFFA} & \hex{FFFF} & ROM & Reset and interrupt vectors: zero \\
@@ -299,7 +388,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
   using the 26-cell three-dimensional Moore neighborhood.
   All address ranges not defined in this table are read-only and zero;
   writing to these addresses has no effect.
-  Pages mapping to cells outside the CA (e.g. $x<\alpha_x$ or $x \geq \alpha_x+L$, or similarly for $y,z$)
+  Pages mapping to cells outside the cell block (e.g. $x<\alpha_x$ or $x \geq \alpha_x+L$, or similarly for $y,z$)
   are read-only and zero (unless otherwise specified, as in Section~\ref{sec:AdjacentCells}).
   Writing to these addresses has no effect.
 }
