@@ -31,20 +31,17 @@
 Cellular Automata (CA) are a common model for universal computation.
 The idea that every pixel (or voxel) of the world computes and talks to its neighbors
 is an appealing synthesis of concepts from natural science such as time- and space-invariance, and wave propagation.
-Cellular automata (along with agent models, lattice gases, and other discretized frameworks) have been useful models in physics and biology,
+Cellular automata, along with agent models, lattice gases, and other discretized frameworks, have been useful models in physics and biology,
 and have also been used in computer games and artificial life experiments (A-Life).
 
 Although straightforward to implement, cellular automata experiments are limited by the resources available to an individual;
-furthermore, there are no well-established ways to bridge different experiments (e.g. to make a link between separate CA worlds).
+furthermore, there are no well-established ways to bridge different experiments, for example to make a link between separate CA worlds.
 Here, we describe a way to do this using the distributed timestamp service provided by a proof-of-work blockchain.
-
-The blockchain was introduced as a distributed ledger for cryptocurrencies \cite{Nakamoto2008}.
-More generally it can be used to drive computation on a distributed virtual machine.
-In the Ethereum network, the virtual machine is used to implement smart contracts.
-Here we describe a different (simpler) use: the simulation of a virtual world of generic cellular automata.
 
 The cellular automata we develop as a motivating example are both universal and familiar, consisting of a three-dimensional grid of 6502 microprocessors broken into blocks.
 The blockchain framework incentivizes simulation of individual cell blocks, as well as data-sharing between blocks.
+
+\subsection{Why 6502s?}
 
 I chose the 6502 processor as the virtual machine for several reasons.
 First, I like it, and so do many others, which is probably why it still gets attention 40 years after it appeared \cite{JonasKording2017}.
@@ -52,14 +49,25 @@ Second, it's simple, and compact (a slim memory footprint per cell is important 
 Why not use RedCode, the programming language of Core War \cite{Dewdney1984}?
 Core War is well-established among afficionados, and is studied by A-Life researchers \cite{VowkWaitSchmidt2004},
 but it's poorly suited to spatially mapped simulations, since Core War programs run in a linear memory space.
-Other prior A-Life frameworks have used virtual machines derived from 80x86 processors, such as Avida \cite{AdamiBrown1994}.
-To define a system with enough precision that it can be implemented on a blockchain, it's helpful to stay close to a machine that actually exists,
-so we use 6502 with only a few minimal extra functions that are all memory-mapped, rather like hardware might be on a real 6502 system.
+Other prior A-Life frameworks have used virtual machines derived from 80x86 processors, as in Avida \cite{AdamiBrown1994}.
 
-The blockchain framework developed here is intended for recreational purposes: the coins mined by the system
+To define a new virtual machine with sufficient precision, it's helpful to stay close to a machine that physically exists.
+We use 6502s with a very small set of machine extensions that are all memory-mapped, rather like hardware might be on a real 6502 system.
+
+\subsection{Why blockchains?}
+
+The blockchain was introduced as a distributed ledger for cryptocurrencies \cite{Nakamoto2008}.
+More generally it can be used to drive computation on a distributed virtual machine.
+In the Ethereum network, the virtual machine is used to implement smart contracts.
+The use here is much simpler: the simulation of a virtual world of generic cellular automata.
+
+It's certainly possible to run these automata on a centralized service, without using a blockchain.
+The main role that the blockchain plays is to establish a consensus for distributed simulation.
+
+The framework developed here is intended for recreational purposes: the coins mined by the system
 have no ostensible purpose other than regulating the rate at which participants can write to the simulated world.
 They might play the role of a score in a game world, measuring the contribution of the owner to keeping the world running.
-However, alternate scores (metrics) of success are possible in the world we describe, such as the popularity or success of programs that one has introduced into the world.
+However, alternate scores and success metrics are possible in the world we describe, such as the fitness of a user's programs.
 
 \section{Methods}
 
@@ -116,7 +124,7 @@ are accessible to the code running in the virtual machine.
 
 After some experiments with 32-bit ARM RISC architectures,
 I settled on the 8-bit MOS Technology 6502 processor for a CPU.
-The corresponding 16-bit memory map is shown in Table~\ref{tab:MemoryMap} and Figure~\ref{fig:UnitCube}.
+The corresponding 16-bit memory map is shown in Table~\ref{tab:MemoryMap}.
 
 In this memory map, the 27 pages of storage
 for the cell and its 26 neighbors
@@ -430,7 +438,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
 \caption{
   \label{tab:MooreNeighborhood}
   Memory map for the 6502 virtual machine of cell $(x,y,z)$,
-  using the 26-cell three-dimensional Moore neighborhood.
+  using the 26-cell three-dimensional Moore neighborhood (Figure~\ref{fig:UnitCube}).
   All address ranges not defined in this table are read-only and zero;
   writing to these addresses has no effect.
   Pages mapping to cells outside the cell block (e.g. $x<\alpha_x$ or $x \geq \alpha_x+L$, or similarly for $y,z$)
