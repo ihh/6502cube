@@ -165,7 +165,7 @@ to discourage frivolous edits.
 If (for example) $W=1$, then minting a coin lets you write a cell.
 
 As well as writing the (volatile) state of the cell, you can write its 32K operating system
-(mapped to address range \hexrange{8000}{FFF7} in the virtual machine; the last 16 bytes, corresponding to \hexrange{FFF8}{FFFF}, are ignored).
+(mapped to address range \hexrange{8000}{FFF7} in the virtual machine; the last 8 bytes, corresponding to \hexrange{FFF8}{FFFF}, are ignored).
 After the first time an operating system is used in the blockchain, it can be referred to by SHA-256 hash, to save space.
 
 \subsection{Adjacent segments}
