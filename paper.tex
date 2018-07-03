@@ -262,7 +262,7 @@ and the proof-of-work burden (for $Z=1$) is roughly comparable to a 6502 CPU.
   \hline
   \hex{0000} & \hex{00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
   \hex{0100} & \hex{01FF} & RAM (transient) & Stack, initialized to zero \\
-  \hex{0200} & \hex{03FF} & RAM (transient) & ``Scratch'' memory, initialized to zero \\
+  \hex{0200} & \hex{03FF} & RAM (transient) & Scratch memory, initialized to zero \\
   \hex{0400} & \hex{0401} & ROM (emulator-mapped) & {\tt TIMELEFT}: cycles left before termination \\
   \hex{0402} & \hex{3FFF} & Reserved & Read-only, zero \\
   \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
