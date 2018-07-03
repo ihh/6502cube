@@ -4,59 +4,6 @@
 \newcommand\hex[1]{{\tt #1}}
 \newcommand\hexrange[2]{\hex{#1}{\tt -}\hex{#2}}
 
-% Macro to generate neighborhood memory map table
-\newcommand\memtable[1]{
-\begin{tabular}{lll}
-  \hline
-  From & To & Contents \\
-  \hline
-  #1
-  \hline
-\end{tabular}
-}
-
-\newcommand\memrow[4]{
-    {\tt {#1}00} & {\tt {#1}FF} & State of cell $(x#2,y#3,z#4)$ \\
-}
-
-% The \memxyz macro gives a densely-connected (von Neumann) neighborhood
-\newcommand\memz[5]{
-  \memrow{#1}{#4}{#5}{-1}
-  \memrow{#2}{#4}{#5}{}
-  \memrow{#3}{#4}{#5}{+1}
-}
-
-\newcommand\memyz[2]{
-  \memz{{#1}0}{{#1}1}{{#1}2}{#2}{-1}
-  \memz{{#1}4}{{#1}5}{{#1}6}{#2}{}
-  \memz{{#1}8}{{#1}9}{{#1}A}{#2}{+1}
-}
-
-\newcommand\memxyz{
-  \memyz{4}{-1}
-
-  %  \memyz{5}{} includes zero page-mapped cell (x,y,z), which we want to skip, so spell it out without that
-  \memz{50}{51}{52}{}{-1}
-  \memrow{54}{}{}{-1}
-  \memrow{56}{}{}{+1}
-  \memz{58}{59}{5A}{}{+1}
-
-  \memyz{6}{+1}
-}
-
-% The following table is a sparse neighborhood
-\newcommand\vonneumannmap{\memtable{
-  \memrow{45}{-1}{}{}
-  \memrow{51}{}{-1}{}
-  \memrow{54}{}{}{-1}
-  \memrow{56}{}{}{+1}
-  \memrow{59}{}{+1}{}
-  \memrow{65}{+1}{}{}
-}}
-
-% The following neighborhood is dense
-\newcommand\mooremap{\memtable{\memxyz}}
-
 % Document
 \begin{document}
 
@@ -98,8 +45,7 @@ These bytes are the storage of the virtual machine.
 
 An {\bf update} of the CA consists of updating each cell in the CA in a pseudorandom order.
 This can be any order that visits $L^3$ uniformly-random selected cells;
-a Mersenne Twister is suitable for this,
-and also for the generation of the random variable {\tt RUNTIME} used to constrain the update (see below).
+a Mersenne Twister is suitable for this.
 
 A cell $(x,y,z)$ is updated by emulating an 8-bit virtual machine.
 The CPU is the MOS Technology 6502 processor.
@@ -125,27 +71,12 @@ the registers {\tt A,X,Y} are initialized to zero,
 all status flags (register {\tt P}) are set to zero,
 the stack pointer (register {\tt SP}) is set to \hex{FF},
 the program counter {\tt PC} is set to \hex{0000},
-{\tt TIMELEFT} is initalized to {\tt STOPTIME} (see below),
 and execution begins at the first byte of zero page.
 
 Execution is terminated
 when a software interrupt or undefined instruction is encountered,
-or by non-maskable interrupt after a predetermined, but (pseudo)random, number of cycles {\tt STOPTIME}.
-{\tt STOPTIME} is a 16-bit integer.
-The LSB of {\tt STOPTIME} is uniformly distributed;
-the MSB is distributed according to a geometric distribution with parameter $\frac{1}{2}$.
-Thus, with probability $\frac{1}{2}$, the value of {\tt STOPTIME} lies uniformly in the range \hexrange{00}{FF};
-with probability $\frac{1}{4}$, it lies in the range \hexrange{100}{1FF};
-with probability $\frac{1}{8}$ it's in the range \hexrange{200}{2FF};
-with probability $\frac{1}{16}$ it's \hexrange{300}{3FF};
-and so on.
-({\tt STOPTIME} stops incrementing and does not overflow when the MSB reaches \hex{FF},
-which happens after the heat death of the universe.)
-Throughout execution, the {\em remaining} value of this timer
-(i.e. the number of cycles from now until termination)
-is visible to the program
-as the read-only 16-bit value called {\tt TIMELEFT},
-available at memory address \hexrange{0400}{0401}.
+or by non-maskable interrupt after
+completion of the first instruction that takes the cycle count past 65,536 cycles.
 
 On termination, the transient address ranges in the memory map
 (including the stack)
@@ -241,17 +172,72 @@ ensures that the number of coins redeemed is less than the number of coins mined
 (the corresponding value for the von Neumann neighborhood of Table~\ref{tab:VonNeumannNeighborhood}
 is much lower, at $R=6$).
 
-Setting the parameters $L$ and $C$ is a little arbitrary.
-If we ran a 6502 CPU at 1Mhz for 10 minutes, with a mean of 400 cycles per cellular update
-(the random variable {\tt STOPTIME} actually has a mean of 383.5 cycles),
-we would update the whole board $10^6 \times 10 \times 60 \times 60 / (400 \times L^3)$ times
-using the 10-minute bitcoin block rate.
-The CA state requires $256 \times L^3$ bytes.
+Setting the parameters $L$ (CA size) and $C$ (updates per block)
+is a little arbitrary, but can be guided by target memory footprint and clock rate.
+For memory, the CA state requires $256 \times L^3$ bytes.
+For clock rate, if we ran a 6502 CPU at 1Mhz for 10 minutes, with a mean of $2^{15}$ cycles per cellular update,
+we would update the whole board $10^6 \times T / (2^{15} \times L^3)$ times
+where $T$ is the time in seconds between blocks ($T=36,000$ for bitcoin).
 Faster clocks and protocols no doubt allow better numbers,
 but considering these values and estimating conservatively,
-we recommend $L=64$ and $C=256$ so that each block takes at most 64Mb to describe the CA state;
-each cell is updated, on average, every few minutes;
-and the proof-of-work burden (for $Z=1$) is roughly comparable to a 6502 CPU.
+we recommend $L=64$ and $C=4$ so that
+each cell is updated every few minutes;
+each block takes at most 64Mb to describe the CA state;
+and the computational burden is roughly comparable to a 6502 CPU.
+
+% Tables, macros
+% Macro to generate neighborhood memory map table
+\newcommand\memtable[1]{
+\begin{tabular}{lll}
+  \hline
+  From & To & Contents \\
+  \hline
+  #1
+  \hline
+\end{tabular}
+}
+
+\newcommand\memrow[4]{
+    {\tt {#1}00} & {\tt {#1}FF} & State of cell $(x#2,y#3,z#4)$ \\
+}
+
+% The \memxyz macro gives a densely-connected (von Neumann) neighborhood
+\newcommand\memz[5]{
+  \memrow{#1}{#4}{#5}{-1}
+  \memrow{#2}{#4}{#5}{}
+  \memrow{#3}{#4}{#5}{+1}
+}
+
+\newcommand\memyz[2]{
+  \memz{{#1}0}{{#1}1}{{#1}2}{#2}{-1}
+  \memz{{#1}4}{{#1}5}{{#1}6}{#2}{}
+  \memz{{#1}8}{{#1}9}{{#1}A}{#2}{+1}
+}
+
+\newcommand\memxyz{
+  \memyz{4}{-1}
+
+  %  \memyz{5}{} includes zero page-mapped cell (x,y,z), which we want to skip, so spell it out without that
+  \memz{50}{51}{52}{}{-1}
+  \memrow{54}{}{}{-1}
+  \memrow{56}{}{}{+1}
+  \memz{58}{59}{5A}{}{+1}
+
+  \memyz{6}{+1}
+}
+
+% The following table is a sparse neighborhood
+\newcommand\vonneumannmap{\memtable{
+  \memrow{45}{-1}{}{}
+  \memrow{51}{}{-1}{}
+  \memrow{54}{}{}{-1}
+  \memrow{56}{}{}{+1}
+  \memrow{59}{}{+1}{}
+  \memrow{65}{+1}{}{}
+}}
+
+% The following neighborhood is dense
+\newcommand\mooremap{\memtable{\memxyz}}
 
 % Tables
 \begin{table}
@@ -262,10 +248,9 @@ and the proof-of-work burden (for $Z=1$) is roughly comparable to a 6502 CPU.
   \hex{0000} & \hex{00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
   \hex{0100} & \hex{01FF} & RAM (transient) & Stack, initialized to zero \\
   \hex{0200} & \hex{03FF} & RAM (transient) & Scratch memory, initialized to zero \\
-  \hex{0400} & \hex{0401} & ROM (emulator-mapped) & {\tt TIMELEFT}: cycles left before termination \\
-  \hex{0402} & \hex{3FFF} & Reserved & Read-only, zero \\
+  \hex{0400} & \hex{3FFF} & ROM & Reserved, zero \\
   \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
-  \hex{8000} & \hex{FFFF} & ROM & Read-only (operating system) \\
+  \hex{8000} & \hex{FFFF} & ROM & Operating system \\
   \hline
 \end{tabular}
 \caption{
