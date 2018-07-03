@@ -177,7 +177,7 @@ To encourage quicker programs,
 we make \code{STOPTIME} a random variable, instead of a fixed limit.
 We also require that programs exit gracefully (returning control to the emulator via a software interrupt)
 if their changes are to be committed to storage.
-As well as discouraging slow programs, this makes it easier to write programs that are atomic (all-or-nothing) in their effects.
+As well as discouraging crashes and other CPU hogs, this makes it easier to write programs that are atomic (all-or-nothing) in their effects.
 Programs can check the \code{TIME} timer at \hexrange{FFF6}{FFF7} to see how many cycles are available.
 
 The random variable \code{STOPTIME} is generated using the cell block RNG (Section~\ref{sec:UpdatingCellBlock})
