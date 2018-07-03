@@ -1,5 +1,7 @@
 \documentclass{article}
 
+\usepackage{graphicx}
+
 % Memory address
 \newcommand\code[1]{{\tt #1}}
 \newcommand\hex[1]{{\tt #1}}
@@ -36,9 +38,9 @@ Although straightforward to implement, cellular automata experiments are limited
 furthermore, there are no well-established ways to bridge different experiments (e.g. to make a link between separate CA worlds).
 Here, we describe a way to do this using the distributed timestamp service provided by a proof-of-work blockchain.
 
-The blockchain was introduced for cryptocurrencies \cite{Nakamoto2008}.
-It can also be used to drive computation on a distributed virtual machine.
-In the Ethereum network, this is used to implement smart contracts.
+The blockchain was introduced as a distributed ledger for cryptocurrencies \cite{Nakamoto2008}.
+More generally it can be used to drive computation on a distributed virtual machine.
+In the Ethereum network, the virtual machine is used to implement smart contracts.
 Here we describe a different (simpler) use: the simulation of a virtual world of generic cellular automata.
 
 The cellular automata we develop as a motivating example are both universal and familiar, consisting of a three-dimensional grid of 6502 microprocessors broken into blocks.
@@ -114,12 +116,12 @@ are accessible to the code running in the virtual machine.
 
 After some experiments with 32-bit ARM RISC architectures,
 I settled on the 8-bit MOS Technology 6502 processor for a CPU.
-The corresponding 16-bit memory map is shown in Table~\ref{tab:MemoryMap}.
+The corresponding 16-bit memory map is shown in Table~\ref{tab:MemoryMap} and Figure~\ref{fig:UnitCube}.
 
 In this memory map, the 27 pages of storage
 for the cell and its 26 neighbors
 in the $3 \times 3 \times 3$ unit cube centered on $(x,y,z)$
-(in cellular automata terminology, the {\em three-dimensional Moore neighborhood})
+(in cellular automata terminology, the {\em three-dimensional Moore neighborhood}, shown in Figure~\ref{fig:UnitCube})
 are mapped directly to bytes in the address range \hexrange{4000}{7FFF} of the virtual machine.
 The detailed description of this part of the memory map
 is given in Table~\ref{tab:MooreNeighborhood}.
@@ -461,11 +463,22 @@ and the computational burden is roughly comparable to a 6502 CPU.
 \caption{
   Interpretation of a 16-bit address in the memory-mapped range \hexrange{4000}{7FFF}
   as pointing to the cell $(x+i-1,y+j-1,z+k-1)$.
-  See Table~\ref{tab:MooreNeighborhood} and Table~\ref{tab:VonNeumannNeighborhood}.
+  See Table~\ref{tab:MooreNeighborhood} and Table~\ref{tab:VonNeumannNeighborhood}, and Figure~\ref{fig:UnitCube}.
   Note that $i,j,k, \in \{ 0,1,2 \}$.
   \label{tab:AddressBits}
 }
 \end{table}
+
+\begin{figure}
+  \includegraphics[width=\textwidth]{unitcube.pdf}
+\caption{
+  The unit cube of the Moore neighborhood, and its relationship to the memory map of Table~\ref{tab:MooreNeighborhood}.
+  The central cell is at $(1,1,1)$, and is mapped to zero page.
+  All other cells are mapped to pages in the range \hexrange{4000}{7FFF},
+  the first six bits of the address MSB corresponding to the $x$, $y$ and $z$ co-ordinates within this cell (see Table~\ref{tab:AddressBits}).
+  \label{fig:UnitCube}
+}
+\end{figure}
 
 \section*{Acknowledgments}
 Thanks to Peter Irvine, Chris Evans, Richard Evans, Michael Mateas.
