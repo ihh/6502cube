@@ -1,6 +1,7 @@
 \documentclass{article}
 
 % Memory address
+\newcommand\code[1]{{\tt #1}}
 \newcommand\hex[1]{{\tt #1}}
 \newcommand\hexrange[2]{\hex{#1}{\tt -}\hex{#2}}
 
@@ -36,7 +37,7 @@ $\alpha_x \leq x < \alpha_x+L$,
 $\alpha_y \leq y < \alpha_y+L$,
 $\alpha_z \leq z < \alpha_z+L$.
 
-Each cell has 256 bytes (one page) of state.
+Each cell has 256 bytes (one page) of volatile state, and a 32K read-only operating system.
 All cells' bytes are initially zero, unless otherwise specified
 (including, implicitly, cells whose coordinates are outside the CA; see also Section~\ref{sec:AdjacentCells}).
 These bytes are the storage of the virtual machine.
@@ -62,7 +63,7 @@ is given in Table~\ref{tab:MooreNeighborhood}.
 
 The neighborhood memory map can be understood as the cell $(x+i-1,y+j-1,z+k-1)$
 mapping to page number (64+i*16+j*4+k) with $i,j,k \in \{0,1,2\}$.
-Thus, in a memory-mapped 16-bit address, the bits have the meanings shown in Table~\ref{tab:AddressBits}.
+Thus, in a memory-mapped 16-bit address, the bits have the interpretation shown in Table~\ref{tab:AddressBits}.
 Note the exception: cell $(x,y,z)$ is not mapped to page 85 (\hexrange{5500}{55FF})
 because it is mapped to zero page (\hexrange{0000}{00FF}) instead.
 
@@ -83,6 +84,26 @@ On termination, the transient address ranges in the memory map
 are discarded.
 The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
 is copied back to the cellular automata storage.
+
+\subsection{Special addresses}
+
+There are several emulator-mapped memory addresses that perform special functions:
+the write-only addresses \code{SWAP} (\hex{FFF7}) and \code{RULE} (\hex{FFF8}),
+and the read-only address \code{RAND} (\hex{FFF9}).
+
+Any value written to \code{SWAP} or \code{RULE} is interpreted as the index of a neighboring cell.
+Only the lower 6 bits of the written byte are relevant, and specify a cell in the $3 \times 3 \times 3$ Moore neighborhood
+in the same way as bits 8-13 of a memory-mapped storage address (c.f. Table~\ref{tab:AddressBits}).
+
+Writing a byte to \code{SWAP} has the effect of swapping the storage and operating system pages associated with the current cell and the specified neighboring cell,
+and then terminating execution.
+If the neighboring cell is outside the CA (see Section~\ref{sec:AdjacentCells}),
+this updates the current cell (and its operating system) but has no effect on the neighboring cell.
+
+Writing a byte to \code{RULE} copies the current cell's operating system to the specified neighboring cell
+(unless the neighboring cell is outside the CA, in which case it has no effect).
+
+Reading a byte from \code{RAND} yields 8 random bits, newly sampled with each read (i.e. multiple reads yield different results).
 
 \subsection{Adjacent cells}
 \label{sec:AdjacentCells}
@@ -135,9 +156,11 @@ by the miner
 The transaction fee is, as usual, the difference between the output and input values of the transaction,
 minus a write operation tax of $W$ coins per cell written,
 to discourage frivolous edits.
-(Suggest $W=1$ to keep this simple.
-Minting a coin lets you write a cell.
-Seems fair.)
+If (for example) $W=1$, then minting a coin lets you write a cell.
+
+As well as writing the (volatile) state of the cell, you can write its 32K operating system
+(mapped to address range \hexrange{8000}{FFEF} in the virtual machine; the last 16 bytes, corresponding to \hexrange{FFF0}{FFFF}, are ignored).
+After the first time an operating system is written, it can be referred to by SHA-256 hash, to save space.
 
 \subsection{Adjacent segments}
 
@@ -246,11 +269,16 @@ and the computational burden is roughly comparable to a 6502 CPU.
   From & To & Type & Contents \\
   \hline
   \hex{0000} & \hex{00FF} & RAM (storage-mapped) & State of cell $(x,y,z)$ \\
-  \hex{0100} & \hex{01FF} & RAM (transient) & Stack, initialized to zero \\
-  \hex{0200} & \hex{03FF} & RAM (transient) & Scratch memory, initialized to zero \\
-  \hex{0400} & \hex{3FFF} & ROM & Reserved, zero \\
+  \hex{0100} & \hex{01FF} & RAM (transient) & Stack: initialized to zero \\
+  \hex{0200} & \hex{03FF} & RAM (transient) & Scratch memory: initialized to zero \\
+  \hex{0400} & \hex{3FFF} & ROM & Reserved: zero \\
   \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
-  \hex{8000} & \hex{FFFF} & ROM & Operating system \\
+  \hex{8000} & \hex{FFEF} & ROM & Operating system \\
+  \hex{FFF0} & \hex{FFF6} & ROM & Reserved: zero \\
+  \hex{FFF7} & \hex{FFF7} & Write-only & \code{SWAP}: swap storage and O/S pages \\
+  \hex{FFF8} & \hex{FFF8} & Write-only & \code{RULE}: copy O/S pages to neighbor \\
+  \hex{FFF9} & \hex{FFF9} & Read-only & \code{RAND}: random byte generator \\
+  \hex{FFFA} & \hex{FFFF} & ROM & Reset and interrupt vectors: zero \\
   \hline
 \end{tabular}
 \caption{
@@ -284,20 +312,19 @@ and the computational burden is roughly comparable to a 6502 CPU.
 \end{table}
 
 \begin{table}
-\begin{tabular}{ll}
+\begin{tabular}{lll}
   \hline
-  Bit(s) & Meaning \\
+  Byte & Bit(s) & Meaning \\
   \hline
-  14,15 & Must be \hex{01} \\
-  12,13 & $i$ \\
-  10,11 & $j$ \\
-  8,9 & $k$ \\
-  0-7 & Address within page \\
+  MSB & 4,5 & $i$ \\
+  MSB & 2,3 & $j$ \\
+  MSB & 0,1 & $k$ \\
+  LSB & 0-7 & Address within page \\
   \hline
 \end{tabular}
 \caption{
-  Interpretation of an address in the memory-mapped range \hexrange{4000}{7FFF}
-  as pointing to a cell $(x+i-1,y+j-1,z+k-1)$.
+  Interpretation of a 16-bit address in the memory-mapped range \hexrange{4000}{7FFF}
+  as pointing to the cell $(x+i-1,y+j-1,z+k-1)$.
   See Table~\ref{tab:MooreNeighborhood} and Table~\ref{tab:VonNeumannNeighborhood}.
   Note that $i,j,k, \in \{ 0,1,2 \}$.
   \label{tab:AddressBits}
