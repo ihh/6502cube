@@ -276,6 +276,7 @@ and the reward for mining is adjusted to include redemption of coins mined by ad
 (this also updates the adjacent cell states accounted for by those cell blocks).
 
 \subsection{Driving updates with the blockchain}
+\label{sec:ProofOfWork}
 
 A valid block must include the $256 \times L^3$ bytes describing the state of the cell block following $C$ updates
 from the state at the end of the previous block.
@@ -289,8 +290,9 @@ used to seed the cell block's random number generator and identify the cell bloc
 
 Any transaction in the blockchain may include, as additional data,
 a {\bf write operation} which modifies the state of one or more cells of the cell block.
-This modification is considered to take place after the emulation of $Z$ update cycles
-which is part of the proof-of-work protocol.
+This modification is considered to take place after the emulation of $C$ update cycles
+which is part of the proof-of-work protocol (Section~\ref{sec:ProofOfWork}).
+
 The order in which such write operations are applied,
 each potentially overwriting the state modifications of its predecessors,
 is implied by the ordering of the transaction in the block.
@@ -302,7 +304,7 @@ minus a write operation tax of $W$ coins per cell written,
 to discourage frivolous edits.
 If (for example) $W=1$, then minting a coin lets you write a cell.
 
-As well as writing the (volatile) state of the cell, you can write its 32K operating system
+As well as writing the (volatile) state of the cell, a write operation can overwrite its 32K operating system
 (mapped to address range \hexrange{8000}{FFEF} in the virtual machine; the last 16 bytes, corresponding to \hexrange{FFF0}{FFFF}, are ignored).
 After the first time an operating system is used in the blockchain, it can be referred to by SHA-256 hash, to save space.
 
