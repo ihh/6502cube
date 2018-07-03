@@ -160,7 +160,7 @@ For notes on how \code{STOPTIME} is chosen, see Section~\ref{sec:Timeouts}.
 On termination, the transient address ranges in the memory map
 (including the stack) are discarded.
 If execution was terminated by timeout, then the rest of memory is also discarded,
-and the state of the CA is restored
+and the state of the CA is restored.
 Otherwise, if the program exited (by software interrupt or undefined opcode) before timing out,
 the neighborhood memory-mapped pages (zero page and other pages in the range \hexrange{4000}{7FFF}, see Table~\ref{tab:MooreNeighborhood})
 are copied back to the cellular automata storage.
