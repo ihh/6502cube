@@ -37,10 +37,14 @@ $\alpha_x \leq x < \alpha_x+L$,
 $\alpha_y \leq y < \alpha_y+L$,
 $\alpha_z \leq z < \alpha_z+L$.
 
-Each cell has 256 bytes (one page) of volatile state, and a 32K read-only operating system.
+Each cell has 256 bytes (one page) of volatile state.
 All cells' bytes are initially zero, unless otherwise specified
 (including, implicitly, cells whose coordinates are outside the CA; see also Section~\ref{sec:AdjacentCells}).
 These bytes are the storage of the virtual machine.
+
+Each cell also has a 32-kilobyte read-only operating system.
+Most cells share the same operating system, and operating system changes should be rare,
+so the O/S for a cell can be represented using a compact hash key such as SHA-256.
 
 \subsection{Virtual machine}
 
@@ -88,10 +92,10 @@ is copied back to the cellular automata storage.
 \subsection{Special addresses}
 
 There are several emulator-mapped memory addresses that perform special functions:
-the write-only addresses \code{SWAP} (\hex{FFF7}) and \code{RULE} (\hex{FFF8}),
-and the read-only address \code{RAND} (\hex{FFF9}).
+the write-only address \code{SWAP} (\hex{FFF8}), which facilitates diffusion models,
+and the read-only address \code{RAND} (\hex{FFF9}), which provides a random number generator.
 
-Any value written to \code{SWAP} or \code{RULE} is interpreted as the index of a neighboring cell.
+Any value written to \code{SWAP} is interpreted as the index of a neighboring cell.
 Only the lower 6 bits of the written byte are relevant, and specify a cell in the $3 \times 3 \times 3$ Moore neighborhood
 in the same way as bits 8-13 of a memory-mapped storage address (c.f. Table~\ref{tab:AddressBits}).
 
@@ -100,8 +104,10 @@ and then terminating execution.
 If the neighboring cell is outside the CA (see Section~\ref{sec:AdjacentCells}),
 this updates the current cell (and its operating system) but has no effect on the neighboring cell.
 
-Writing a byte to \code{RULE} copies the current cell's operating system to the specified neighboring cell
-(unless the neighboring cell is outside the CA, in which case it has no effect).
+Writes to \code{SWAP} are not the only means by which operating system code is propagated across the CA.
+During an update, writing any byte to any neighboring cell, i.e. any cell in the memory-mapped storage (\hexrange{4000}{7FFF}),
+has the implicit effect of copying the operating system pages from the current cell to the neighbor.
+This is handled transparently by the emulator without consuming any additional cycles.
 
 Reading a byte from \code{RAND} yields 8 random bits, newly sampled with each read (i.e. multiple reads yield different results).
 
@@ -159,8 +165,8 @@ to discourage frivolous edits.
 If (for example) $W=1$, then minting a coin lets you write a cell.
 
 As well as writing the (volatile) state of the cell, you can write its 32K operating system
-(mapped to address range \hexrange{8000}{FFEF} in the virtual machine; the last 16 bytes, corresponding to \hexrange{FFF0}{FFFF}, are ignored).
-After the first time an operating system is written, it can be referred to by SHA-256 hash, to save space.
+(mapped to address range \hexrange{8000}{FFF7} in the virtual machine; the last 16 bytes, corresponding to \hexrange{FFF8}{FFFF}, are ignored).
+After the first time an operating system is used in the blockchain, it can be referred to by SHA-256 hash, to save space.
 
 \subsection{Adjacent segments}
 
@@ -273,10 +279,8 @@ and the computational burden is roughly comparable to a 6502 CPU.
   \hex{0200} & \hex{03FF} & RAM (transient) & Scratch memory: initialized to zero \\
   \hex{0400} & \hex{3FFF} & ROM & Reserved: zero \\
   \hex{4000} & \hex{7FFF} & RAM (storage-mapped) & Memory-mapped neighborhood (Table~\ref{tab:MooreNeighborhood}) \\
-  \hex{8000} & \hex{FFEF} & ROM & Operating system \\
-  \hex{FFF0} & \hex{FFF6} & ROM & Reserved: zero \\
-  \hex{FFF7} & \hex{FFF7} & Write-only & \code{SWAP}: swap storage and O/S pages \\
-  \hex{FFF8} & \hex{FFF8} & Write-only & \code{RULE}: copy O/S pages to neighbor \\
+  \hex{8000} & \hex{FFF7} & ROM & Operating system \\
+  \hex{FFF8} & \hex{FFF8} & Write-only & \code{SWAP}: swap storage page with neighbor \\
   \hex{FFF9} & \hex{FFF9} & Read-only & \code{RAND}: random byte generator \\
   \hex{FFFA} & \hex{FFFF} & ROM & Reset and interrupt vectors: zero \\
   \hline
