@@ -77,7 +77,7 @@
   and communications between adjacent nodes on the 3D grid are modeled as blockchain mergers.
 \end{abstract}
 
-\section{Cellular Automaton}
+\section{Cellular automata}
 
 \subsection{Storage}
 \label{sec:Storage}
@@ -91,7 +91,7 @@ $\alpha_z \leq z < \alpha_z+L$.
 
 Each cell has 256 bytes (one page) of state.
 All cells' bytes are initially zero, unless otherwise specified
-(including, implicitly, cells whose coordinates are outside the CA; see also Section~\ref{sec:Blankets}).
+(including, implicitly, cells whose coordinates are outside the CA; see also Section~\ref{sec:AdjacentCells}).
 These bytes are the storage of the virtual machine.
 
 \subsection{Virtual machine}
@@ -153,8 +153,8 @@ are discarded.
 The neighborhood memory map (\hexrange{4000}{7FFF}, Table~\ref{tab:MooreNeighborhood})
 is copied back to the cellular automata storage.
 
-\subsection{Blankets}
-\label{sec:Blankets}
+\subsection{Adjacent cells}
+\label{sec:AdjacentCells}
 
 Consider those cell coordinates $(x,y,z)$ that are outside the CA,
 e.g. $(\alpha_x-1,\alpha_y,\alpha_z)$ or  $(\alpha_x,\alpha_y,\alpha_z + L)$.
@@ -162,11 +162,11 @@ Some of these, specifically those in the Moore neighborhood of cells that are in
 are a relevant initial condition for the machine,
 since they map to bytes in its addressable memory.
 
-We refer to these cells as the {\bf blanket} of the CA.
+We refer to these cells as the CA's {\bf adjacent cells}.
 Earlier, in Section~\ref{sec:Storage}, we specified that the state of these cells was implicitly initialized to zero.
 More generally, we may refer to the initial (and perpetual, throughout the execution of an update)
-state of these cells as the CA's {\bf blanket state}.
-This blanket state is zero until otherwise specified, but may be affected
+state of these cells as the CA's {\bf adjacent state}.
+This adjacent state is zero until otherwise specified, but may be affected
 by interactions with neighboring CAs in the infinite vector space,
 as for example by the blockchain of Section~\ref{sec:Blockchain}.
 
@@ -176,7 +176,7 @@ as for example by the blockchain of Section~\ref{sec:Blockchain}.
 The CA has an associated blockchain, defined as in \cite{Nakamoto2008}.
 Updates are incentivized by mining,
 and the reward for mining is adjusted to include redemption of coins mined by adjacent CA blockchains
-(this also updates the blanket cells accounted for by those CAs).
+(this also updates the adjacent cell states accounted for by those CAs).
 
 \subsection{Updates}
 
@@ -189,7 +189,7 @@ Let the definition of a block include the coordinates $(\alpha_x,\alpha_y,\alpha
 these coordinates, together with the number of updates,
 must be used to seed the random number generator for the $Z$ updates.
 
-\subsection{Writes}
+\subsection{Write operations}
 
 Any transaction in the blockchain may include, as additional data,
 a {\bf write operation} which modifies the state of one or more cells of the CA.
@@ -208,11 +208,11 @@ to discourage frivolous edits.
 Minting a coin lets you write a cell.
 Seems fair.)
 
-\subsection{Adjacencies}
+\subsection{Adjacent segments}
 
 The block may include sections of blockchain from {\bf adjacent cellular automata},
-defined to be CAs with co-ordinates containing cells that
-overlap with the current CA's blanket,
+defined to be CAs with co-ordinate ranges that
+overlap with the current CA's adjacent cells,
 but no cells that overlap with
 cells in the co-ordinate range of this CA (or any other CA previously encountered in the blockchain,
 except the adjacent CA itself).
@@ -224,10 +224,9 @@ and they must otherwise be consistent continuations of the adjacent CA's blockch
 They may, themselves, recursively refer to parts of the current blockchain as their own adjacent segments,
 summarized by their hashes for compactness.
 
-When a block includes an adjacent segment, the CA's blanket is updated to reflect the state
-of the blanket cells described by the adjacent segment.
-Regular inclusion of adjacent segments from an adjacent CA's blockchain
-corresponds to keeping a bidirectional read-only interface open with that CA.
+When a block includes an adjacent segment, the CA's adjacent cell state is updated to match the adjacent segment.
+Regular mutual inclusion of adjacent segments from adjacent CAs' blockchains
+corresponds to keeping a bidirectional read-only interface open between those CAs.
 
 To incentivize this,
 inclusion of an adjacent segment in a block for the first time
@@ -284,7 +283,7 @@ and the proof-of-work burden (for $Z=1$) is roughly comparable to a 6502 CPU.
   All address ranges not defined in this table are read-only and zero;
   writing to these addresses has no effect.
   Pages mapping to cells outside the CA (e.g. $x<\alpha_x$ or $x \geq \alpha_x+L$, or similarly for $y,z$)
-  are read-only and zero (unless otherwise specified, as in Section~\ref{sec:Blankets}).
+  are read-only and zero (unless otherwise specified, as in Section~\ref{sec:AdjacentCells}).
   Writing to these addresses has no effect.
 }
 \end{table}
