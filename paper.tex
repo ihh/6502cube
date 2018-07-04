@@ -1,6 +1,7 @@
 \documentclass{article}
 
 \usepackage{graphicx}
+\usepackage{amsfonts}
 
 % Memory address
 \newcommand\code[1]{{\tt #1}}
@@ -39,7 +40,7 @@ furthermore, there are no well-established ways to bridge different experiments,
 Here, we describe a way to do this using the distributed timestamp service provided by a proof-of-work blockchain.
 
 The cellular automata we develop as a motivating example are both universal and familiar, consisting of a three-dimensional grid of 6502 microprocessors broken into blocks.
-The blockchain framework incentivizes simulation of individual cell blocks, as well as data-sharing between blocks.
+The blockchain framework incentivizes simulation of individual chunks of cells, as well as traffic between chunks.
 
 \subsection{Why 6502s?}
 
@@ -71,16 +72,18 @@ However, alternate scores and success metrics are possible in the world we descr
 
 \section{Methods}
 
-\subsection{Cell blocks}
+\subsection{Chunks of cells}
 
-Every cell of the cellular automata has a unique integer 3-space co-ordinate $(x,y,z)$.
+Every cell of the cellular automata has a unique integer 3-space co-ordinate $(x,y,z) \in \mathbb{Z}^3$.
 
-A single {\bf cell block} of the cellular automata is a $L \times L \times L$ array of cells,
-located at an offset $(\alpha_x,\alpha_y,\alpha_z)$ in integer 3-space.
-Cells in the cell block are indexed $(x,y,z$) where
-$\alpha_x \leq x < \alpha_x+L$,
-$\alpha_y \leq y < \alpha_y+L$,
-$\alpha_z \leq z < \alpha_z+L$.
+A single {\bf chunk} of the cellular automata is a $L \times L \times L$ cubic array of cells,
+located at an offset $L\alpha$,
+where $\alpha = (\alpha_x,\alpha_y,\alpha_z)$ is an integer 3-vector called the {\bf chunk location}.
+
+Cells in the chunk are indexed $(x,y,z$) where
+$L\alpha_x \leq x < (L+1)\alpha_x$,
+$L\alpha_y \leq y < (L+1)\alpha_y$,
+$L\alpha_z \leq z < (L+1)\alpha_z$.
 
 \subsection{Read-only and random-access storage}
 \label{sec:Storage}
@@ -97,28 +100,31 @@ Automata without RAM are like stateless protocols: they scale well, but they may
 
 Each cell has 256 bytes (one page) of updatable state (RAM).
 All cells' bytes are initially zero, unless otherwise specified
-(including, implicitly, cells whose coordinates are outside the cell block; see also Section~\ref{sec:AdjacentCells}).
+(including, implicitly, cells whose coordinates are outside the chunk; see also Section~\ref{sec:AdjacentCells}).
 These bytes are the storage of the virtual machine.
 
 Each cell also has a 32-kilobyte read-only operating system (ROM).
 Most cells share the same operating system, and operating system changes should be rare,
 so the O/S for a cell can be represented using a compact hash key such as SHA-256.
 
-\subsection{Updating the cell block}
-\label{sec:UpdatingCellBlock}
+\subsection{Updating the chunk}
+\label{sec:UpdatingChunk}
 
-An {\bf update} of the cell block consists of updating each cell in a pseudorandom order.
+An {\bf update} of the chunk consists of updating each cell in a pseudorandom order.
 This can be any order that visits $L^3$ uniformly-random selected cells in a well-defined pseudorandom order;
 a Mersenne Twister (MT19937),
-seeded on the tuple $(\alpha_x,\alpha_y,\alpha_z,L,U)$ where $U$ is the number of updates,
+seeded on the tuple $(\alpha,L,U)$ where $U$ is the number of updates,
 is a suitable random number generator (RNG) for this and other random numbers required during the update.
+
+Section~\ref{sec:AdjacentCells} describes a variant of this procedure whereby we construct a larger,
+virtual chunk (including adjacent chunks) in order to perform predictive simulation of the neighborhood.
 
 \subsection{Virtual machine}
 
 A cell $(x,y,z)$ is updated by emulating a virtual machine.
 In designing this virtual machine we want to use a well-known, simple architecture with small programs,
 that is transparently universal.
-The interface between the virtual machine and the cell block
+The interface between the virtual machine and the chunk storage
 needs to be such that the cell's ROM and the RAM, as well as the RAM of its neighbors,
 are accessible to the code running in the virtual machine.
 
@@ -180,12 +186,12 @@ if their changes are to be committed to storage.
 As well as discouraging crashes and other CPU hogs, this makes it easier to write programs that are atomic (all-or-nothing) in their effects.
 Programs can check the \code{TIME} timer at \hexrange{FFF6}{FFF7} to see how many cycles are available.
 
-The random variable \code{STOPTIME} is generated using the cell block RNG (Section~\ref{sec:UpdatingCellBlock})
+The random variable \code{STOPTIME} is generated using the chunk RNG (Section~\ref{sec:UpdatingChunk})
 and the following algorithm:
 \begin{itemize}
 \item Let $r$ and $s$ denote random 16-bit integers
 \item Let $z$ be the number of leading zero bits of $s$, so $0 \leq z \leq 16$
-\item Let $m = \mbox{max}(z,13) + 2$. The distribution of $m$ is now given by
+\item Let $m = \mbox{min}(z,13) + 2$. The distribution of $m$ is now given by
   \[
   P(m=k) = \left\{ \begin{array}{ll} 2^{1-k} & \mbox{if $2 \leq k < 15$} \\ 2^{-13} & \mbox{if $k = 15$} \end{array} \right.
   \]
@@ -210,8 +216,8 @@ These are described in the sections below.
 
 \subsection{Operating system updates}
 
-The machine architecture described so far is adequate if the operating system ROM is shared by every cell on the block.
-To allow O/S updates to be propagated across the block, we introduce two specific mechanisms.
+The machine architecture described so far is adequate if the operating system ROM is shared by every cell in the chunk.
+To allow O/S updates to be propagated across the chunk, we introduce two specific mechanisms.
 Guiding the design of this mechanism are the following two principles:
 \begin{itemize}
 \item If a cell writes another cell's RAM, then it should expect that cell's ROM to be the same as its own.
@@ -225,14 +231,14 @@ in the same way as bits 8-13 of a memory-mapped storage address (c.f. Table~\ref
 
 Writing a byte to \code{SWAP} has the effect of swapping the storage and operating system pages associated with the current cell and the specified neighboring cell,
 and then triggering a software interrupt, terminating execution.
-If the neighboring cell is outside the cell block (see Section~\ref{sec:AdjacentCells}),
+If the neighboring cell is outside the chunk (see Section~\ref{sec:AdjacentCells}),
 this updates the current cell (and its operating system) but has no effect on the neighboring cell.
 If the written byte is not a valid index byte, then there is no effect.
-A software interrupt is triggered, and program execution terminated, regardless of whether the written byte is a valid index pointing to a cell within the cell block.
+A software interrupt is triggered, and program execution terminated, regardless of whether the written byte is a valid index pointing to a cell within the chunk.
 
 Reading a byte from address \code{SWAP} always yields zero, and has no other effect.
 
-As mentioned above, the \code{SWAP} interface is one of two mechanisms by which operating system code is propagated across the cell block.
+As mentioned above, the \code{SWAP} interface is one of two mechanisms by which operating system code is propagated across the chunk.
 The second mechanism is built into the memory-mapped storage interface itself.
 During an update, writing any byte to any neighboring cell, i.e. any cell in the memory-mapped storage (\hexrange{4000}{7FFF}),
 has the implicit effect of copying the operating system pages from the current cell to the neighbor.
@@ -242,7 +248,7 @@ This is handled transparently by the emulator without consuming any additional c
 
 The read-only \code{RAND} address, \hex{FFF9}, is a random number generator.
 Reading a byte from \code{RAND} yields 8 random bits, newly sampled with each read (i.e. multiple reads yield different results).
-The random numbers are provided by the cell block's RNG (Section~\ref{sec:UpdatingCellBlock}).
+The random numbers are provided by the chunk's RNG (Section~\ref{sec:UpdatingChunk}).
 
 \subsection{Timer}
 
@@ -250,46 +256,63 @@ The read-only 16-bit \code{TIME} address, \hexrange{FFF6}{FFF7}, gives the numbe
 (More precisely, this address is initialized to \code{STOPTIME} before the first instruction is executed,
 and decremented after completion of each instruction.)
 
-\subsection{Adjacent cells}
+\subsection{Adjacent chunks}
 \label{sec:AdjacentCells}
 
-Consider those cell coordinates $(x,y,z)$ that are outside the cell block,
-e.g. $(\alpha_x-1,\alpha_y,\alpha_z)$ or  $(\alpha_x,\alpha_y,\alpha_z + L)$.
-Some of these, specifically those in the Moore neighborhood of cells that are in the cell block,
-are a relevant initial condition for the machine,
-since they map to bytes in its addressable memory.
+A chunk is {\bf adjacent} to the central chunk at $L\alpha$
+if it has a chunk location in the Moore neighborhood of $\alpha$
+(and therefore contains at least some cells in the neighborhood of cells in the central chunk).
 
-We refer to these cells as the cell block's {\bf adjacent cells}.
-Earlier, in Section~\ref{sec:Storage}, we specified that the state of these cells was implicitly initialized to zero.
-More generally, we may refer to the initial (and perpetual, throughout the execution of an update)
-state of these cells as the cell block's {\bf adjacent state}.
-This adjacent state is zero until otherwise specified, but may be affected
-by interactions with neighboring cell blocks in the infinite vector space,
-as for example by the blockchain of Section~\ref{sec:Blockchain}.
+When running several updates of the central chunk,
+given some knowledge (e.g. a recent snapshot) for the state of adjacent chunks,
+and assuming that communication with those adjacent chunks is imperfect (so that our snapshot may be out of date),
+we perform {\bf predictive simulation} of adjacent chunks.
+
+Specifically, when updating the central chunk, we also update our estimates of the adjacent chunks.
+To do this we construct a $(3L) \times (3L) \times (3L)$ {\bf virtual chunk},
+into which is mapped the current state of our chunk, and our current best estimates of the 26 adjacent chunks.
+
+We then update all 27 sub-chunks of the $3 \times 3 \times 3$ unit cube in the usual order ($z$-fastest, like the MSB in Table~\ref{tab:AddressBits}).
+Each sub-chunk's update is handled as though it were a single chunk,
+using the algorithm of Section~\ref{sec:UpdatingChunk},
+i.e. updating $L^3$ cells selected using a random number generator seeded with the tuple $(\alpha',L,U')$
+where $\alpha'$ is the adjacent chunk location and $U'$ is our estimate of the adjacent chunk update count
+(which is updated along with our estimate of the adjacent chunk states).
+
+Writes between adjacent chunks are not discarded, as they were previously
+(though writes outside of the $(3L) \times (3L) \times (3L)$ chunk will still be discarded).
+However, the central block's estimates of the state of its adjacent chunks
+may be overwritten in the future by news from those adjacent chunks,
+arriving in the blockchain in the form of adjacent segments (Section~\ref{sec:AdjacentSegments}).
+
+Predictive simulation facilitates traffic between chunks
+by allowing migration to be an active process, instead of a passive diffusion at the border.
 
 \subsection{Blockchain}
 \label{sec:Blockchain}
 
-The cell block has an associated blockchain, defined as in \cite{Nakamoto2008}.
+The chunk has an associated blockchain, defined as in \cite{Nakamoto2008}.
 Updates are incentivized by mining,
-and the reward for mining is adjusted to include redemption of coins mined by adjacent cell-block blockchains
-(this also updates the adjacent cell states accounted for by those cell blocks).
+and the reward for mining is adjusted to include redemption of coins mined by adjacent cell-chunk blockchains
+(this also updates the boundaries with those chunks).
 
 \subsection{Driving updates with the blockchain}
 \label{sec:ProofOfWork}
 
-A valid block must include the $256 \times L^3$ bytes describing the state of the cell block following $C$ updates
-from the state at the end of the previous block.
+A valid block must include a full description of the state of the $L^3$ cells in the central chunk,
+and the new best estimates for the $26L^3$ cells in adjacent chunks,
+following $C$ updates of the virtual chunk described in Section~\ref{sec:AdjacentCells}.
 $C$ is the number of cycles per cell expected in the blockchain update time
 (which for bitcoin is 10 minutes).
 
 Let the definition of a block include the coordinates $(\alpha_x,\alpha_y,\alpha_z,L,U)$
-used to seed the cell block's random number generator and identify the cell block in space and time.
+used to seed the chunk's random number generator and identify the chunk in space and time,
+as well as the estimated update counts for adjacent chunks.
 
 \subsection{Write operations}
 
 Any transaction in the blockchain may include, as additional data,
-a {\bf write operation} which modifies the state of one or more cells of the cell block.
+a {\bf write operation} which modifies the state of one or more cells of the chunk.
 This modification is considered to take place after the emulation of $C$ update cycles
 which is part of the proof-of-work protocol (Section~\ref{sec:ProofOfWork}).
 
@@ -309,32 +332,27 @@ As well as writing the (volatile) state of the cell, a write operation can overw
 After the first time an operating system is used in the blockchain, it can be referred to by SHA-256 hash, to save space.
 
 \subsection{Adjacent segments}
+\label{sec:AdjacentSegments}
 
-The block may include sections of blockchain from {\bf adjacent cell blocks},
-defined to be cell blocks with co-ordinate ranges that
-overlap with the current cell block's adjacent cells,
-but no cells that overlap with
-cells in the co-ordinate range of this cell block (or any other cell block previously encountered in the blockchain,
-except the adjacent cell block itself).
-These blockchain segments from adjacent cell blocks are called {\bf adjacent segments}.
+The block may include sections of blockchain from adjacent chunks,
+referred to as {\bf adjacent segments}.
 
-Adjacent segments must be consistent with any previously-observed adjacent segments
-earlier on the current blockchain (that is, they must not involve conflicting cell block,
-and they must otherwise be consistent continuations of the adjacent cell block's blockchain).
+Adjacent segments must be consistent continuations of any previously-observed adjacent segments
+earlier on the central blockchain.
 They may, themselves, recursively refer to parts of the current blockchain as their own adjacent segments,
 summarized by their hashes for compactness.
 
-When a block includes an adjacent segment, the cell block's adjacent cell state is updated to match the adjacent segment.
-Regular mutual inclusion of adjacent segments from adjacent cell blocks' blockchains
-corresponds to keeping a bidirectional read-only interface open between those cell blocks.
+When a block includes an adjacent segment, the chunk's estimate for that adjacent chunk's state is updated to match the information in the adjacent segment.
+Regular mutual inclusion of adjacent segments from adjacent chunks' blockchains
+corresponds to keeping a bidirectional read-only interface open between those chunks.
 
-To incentivize this,
+To incentivize this bidirectional traffic,
 inclusion of an adjacent segment in a block for the first time
 accrues an additional benefit of $C/R$ coins to the miner of the block,
 where $C$ is the number of {\bf redeemable coins} mined or accrued (via more distant, proximal adjacencies)
-by cells in the adjacent cell block,
-and $R$ is the {\bf redemption rate}, the number of redeemable coins in adjacent cell blocks
-required to accrue a coin in the current cell block.
+by cells in the adjacent chunk,
+and $R$ is the {\bf redemption rate}, the number of redeemable coins in adjacent chunks
+required to accrue a coin in the current chunk.
 It is of course necessary to have $R>2$ to prevent an explosion of redeemable coins in 3D space;
 another notable value is $R=26$, which (in the densely-connected Moore neighborhood)
 ensures that the number of coins redeemed is less than the number of coins mined locally
@@ -343,17 +361,17 @@ is much lower, at $R=6$).
 
 \subsection{Parameters}
 
-Setting the parameters $L$ (cell block size) and $C$ (updates per block)
+Setting the parameters $L$ (chunk size) and $C$ (updates per block)
 is a little arbitrary, but can be guided by target memory footprint and clock rate.
-For memory, the cell block state requires $256 \times L^3$ bytes.
+For memory, the chunk state requires $256 \times L^3$ bytes.
 For clock rate, if we ran a 6502 CPU at 1Mhz for 10 minutes, with a mean of $44.5$ cycles per cellular update,
-we would update the whole cell block $10^6 \times T / (44.5 \times L^3)$ times
+we would update the whole chunk $10^6 \times T / (44.5 \times L^3)$ times
 where $T$ is the time in seconds between blocks ($T=36,000$ for bitcoin).
 Faster clocks and protocols no doubt allow better numbers,
 but considering these values and estimating conservatively,
 we recommend $L=64$ and $C=4$ so that
 each cell is updated every few minutes;
-each block takes at most 64Mb to describe the cell block state;
+each block takes at most 64Mb to describe the chunk state;
 and the computational burden is roughly comparable to a 6502 CPU.
 
 % Tables, macros
@@ -443,7 +461,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
   using the 26-cell three-dimensional Moore neighborhood (Figure~\ref{fig:UnitCube}).
   All address ranges not defined in this table are read-only and zero;
   writing to these addresses has no effect.
-  Pages mapping to cells outside the cell block (e.g. $x<\alpha_x$ or $x \geq \alpha_x+L$, or similarly for $y,z$)
+  Pages mapping to cells outside the chunk (e.g. $x<L\alpha_x$ or $x \geq (L+1)\alpha_x$, or similarly for $y,z$)
   are read-only and zero (unless otherwise specified, as in Section~\ref{sec:AdjacentCells}).
   Writing to these addresses has no effect.
 }
