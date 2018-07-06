@@ -78,7 +78,7 @@ However, alternate scores and success metrics are possible in the world we descr
 Every cell of the cellular automata has a unique integer 3-space co-ordinate $(x,y,z) \in \mathbb{Z}^3$.
 
 A single {\bf chunk} of the cellular automata is a $L \times L \times L$ cubic array of cells,
-located at an offset $L\alpha$,
+located at a base offset $L\alpha$,
 where $\alpha = (\alpha_x,\alpha_y,\alpha_z)$ is an integer 3-vector called the {\bf chunk location}.
 
 Cells in the chunk are indexed $(x,y,z$) where
@@ -100,8 +100,8 @@ As an analogy, automata without ROM are like programs that run in user space wit
 Automata without RAM are like stateless protocols: they scale well, but they may be inflexible for some purposes.
 
 Each cell has 256 bytes (one page) of updatable state (RAM).
-All cells' bytes are initially zero, unless otherwise specified
-(including, implicitly, cells whose coordinates are outside the chunk; see also Section~\ref{sec:AdjacentCells}).
+All cells' bytes are initially zero
+(including, implicitly, cells whose coordinates are outside the chunk; see also Section~\ref{sec:NeighborChunks}).
 These bytes are the storage of the virtual machine.
 
 Each cell also has a 32-kilobyte read-only operating system (ROM).
@@ -111,14 +111,15 @@ so the O/S for a cell can be represented using a compact hash key such as SHA-25
 \subsection{Updating the chunk}
 \label{sec:UpdatingChunk}
 
-An {\bf update} of the chunk consists of updating each cell in a pseudorandom order.
-This can be any order that visits $L^3$ uniformly-random selected cells in a well-defined pseudorandom order;
-a Mersenne Twister (MT19937),
+An {\bf update} of the chunk consists of updating $L^3$ uniformly-random selected cells in a well-defined pseudorandom order.
+A Mersenne Twister (MT19937),
 seeded on the tuple $(\alpha,L,U)$ where $U$ is the number of updates,
-is a suitable random number generator (RNG) for this and other random numbers required during the update.
+is a suitable random number generator (RNG) for this
+and for generating the random cycle limit \code{STOPTIME} (Section~\ref{sec:Timeouts}),
+which also must be generated for every updated cell.
 
-Section~\ref{sec:AdjacentCells} describes a variant of this procedure whereby we construct a larger,
-virtual chunk (including adjacent chunks) in order to perform predictive simulation of the neighborhood.
+Section~\ref{sec:NeighborChunks} describes a variant of this procedure whereby we construct a larger,
+virtual chunk (including neighboring chunks) in order to perform predictive simulation of the neighborhood.
 
 \subsection{Virtual machine}
 
@@ -232,8 +233,9 @@ in the same way as bits 8-13 of a memory-mapped storage address (c.f. Table~\ref
 
 Writing a byte to \code{SWAP} has the effect of swapping the storage and operating system pages associated with the current cell and the specified neighboring cell,
 and then triggering a software interrupt, terminating execution.
-If the neighboring cell is outside the chunk (see Section~\ref{sec:AdjacentCells}),
-this updates the current cell (and its operating system) but has no effect on the neighboring cell.
+If the neighboring cell is outside the chunk,
+this updates the current cell (and its operating system) but has no effect on the neighboring cell
+(although see Section~\ref{sec:NeighborChunks}).
 If the written byte is not a valid index byte, then there is no effect.
 A software interrupt is triggered, and program execution terminated, regardless of whether the written byte is a valid index pointing to a cell within the chunk.
 
@@ -249,7 +251,9 @@ This is handled transparently by the emulator without consuming any additional c
 
 The read-only \code{RAND} address, \hex{FFF9}, is a random number generator.
 Reading a byte from \code{RAND} yields 8 random bits, newly sampled with each read (i.e. multiple reads yield different results).
-The random numbers are provided by the chunk's RNG (Section~\ref{sec:UpdatingChunk}).
+
+The random numbers are provided by an RNG seeded on the cell and chunk co-ordinates and the chunk update count
+(NB this is a per-cell RNG, distinct from the per-chunk RNG of Section~\ref{sec:UpdatingChunk} that selects cells and sets \code{STOPTIME}).
 
 \subsection{Timer}
 
@@ -257,34 +261,35 @@ The read-only 16-bit \code{TIME} address, \hexrange{FFF6}{FFF7}, gives the numbe
 (More precisely, this address is initialized to \code{STOPTIME} before the first instruction is executed,
 and decremented after completion of each instruction.)
 
-\subsection{Adjacent chunks}
-\label{sec:AdjacentCells}
+\subsection{Neighboring chunks}
+\label{sec:NeighborChunks}
 
-A chunk is {\bf adjacent} to the central chunk at $L\alpha$
-if it has a chunk location in the Moore neighborhood of $\alpha$
-(and therefore contains at least some cells in the neighborhood of cells in the central chunk).
+Two $L$-sized chunks are neighbors if their chunk locations are neighbors;
+that is, they have base offsets $L\alpha_1$ and $L\alpha_2$,
+and $\alpha_1$ is in the Moore neighborhood of $\alpha_2$.
+This is equivalent to the statement that (at least) one cell in the first chunk has (at least) one cell in the second chunk in its Moore neighborhood, and vice versa.
 
 When running several updates of the central chunk,
-given some knowledge (e.g. a recent snapshot) for the state of adjacent chunks,
-and assuming that communication with those adjacent chunks is imperfect (so that our snapshot may be out of date),
-we perform {\bf predictive simulation} of adjacent chunks.
+given some knowledge (e.g. a recent snapshot) for the state of neighboring chunks,
+and assuming that communication with those neighboring chunks is imperfect (so that our snapshot may be out of date),
+we perform {\bf predictive simulation} of neighboring chunks.
 
-Specifically, when updating the central chunk, we also update our estimates of the adjacent chunks.
-To do this we construct a $(3L) \times (3L) \times (3L)$ {\bf virtual chunk},
-into which is mapped the current state of our chunk, and our current best estimates of the 26 adjacent chunks.
+Specifically, when updating the central chunk, we also update our estimates of the neighboring chunks.
+To do this we construct a $(3L) \times (3L) \times (3L)$ virtual {\bf super-chunk},
+into which is mapped the current state of our chunk, as well as our current best estimates of the 26 neighboring chunks.
 
 We then update all 27 sub-chunks of the $3 \times 3 \times 3$ unit cube in the usual order ($z$-fastest, like the MSB in Table~\ref{tab:AddressBits}).
 Each sub-chunk's update is handled as though it were a single chunk,
 using the algorithm of Section~\ref{sec:UpdatingChunk},
 i.e. updating $L^3$ cells selected using a random number generator seeded with the tuple $(\alpha',L,U')$
-where $\alpha'$ is the adjacent chunk location and $U'$ is our estimate of the adjacent chunk update count
-(which is updated along with our estimate of the adjacent chunk states).
+where $\alpha'$ is the neighboring chunk location and $U'$ is our estimate of the neighboring chunk update count
+(which is updated along with our estimate of the neighboring chunk states).
 
-Writes between adjacent chunks are not discarded, as they were previously
+Writes between neighboring chunks are not discarded, as they were previously
 (though writes outside of the $(3L) \times (3L) \times (3L)$ chunk will still be discarded).
-However, the central block's estimates of the state of its adjacent chunks
-may be overwritten in the future by news from those adjacent chunks,
-arriving in the blockchain in the form of adjacent segments (Section~\ref{sec:AdjacentSegments}).
+However, the central block's estimates of the state of its neighboring chunks
+may be overwritten in the future by news from those neighboring chunks,
+arriving in the blockchain in the form of neighboring segments (Section~\ref{sec:NeighboringSegments}).
 
 Predictive simulation facilitates traffic between chunks
 by allowing migration to be an active process, instead of a passive diffusion at the border.
@@ -294,21 +299,21 @@ by allowing migration to be an active process, instead of a passive diffusion at
 
 The chunk has an associated blockchain, defined as in \cite{Nakamoto2008}.
 Updates are incentivized by mining,
-and the reward for mining is adjusted to include redemption of coins mined by adjacent cell-chunk blockchains
+and the reward for mining is adjusted to include redemption of coins mined by neighboring cell-chunk blockchains
 (this also updates the boundaries with those chunks).
 
 \subsection{Driving updates with the blockchain}
 \label{sec:ProofOfWork}
 
 A valid block must include a full description of the state of the $L^3$ cells in the central chunk,
-and the new best estimates for the $26L^3$ cells in adjacent chunks,
-following $C$ updates of the virtual chunk described in Section~\ref{sec:AdjacentCells}.
+and the new best estimates for the $26L^3$ cells in neighboring chunks,
+following $C$ updates of the super-chunk described in Section~\ref{sec:NeighborChunks}.
 $C$ is the number of cycles per cell expected in the blockchain update time
 (which for bitcoin is 10 minutes).
 
 Let the definition of a block include the coordinates $(\alpha_x,\alpha_y,\alpha_z,L,U)$
 used to seed the chunk's random number generator and identify the chunk in space and time,
-as well as the estimated update counts for adjacent chunks.
+as well as the estimated update counts for neighboring chunks.
 
 \subsection{Write operations}
 
@@ -332,30 +337,30 @@ As well as writing the (volatile) state of the cell, a write operation can overw
 (mapped to address range \hexrange{8000}{FFEF} in the virtual machine; the last 16 bytes, corresponding to \hexrange{FFF0}{FFFF}, are ignored).
 After the first time an operating system is used in the blockchain, it can be referred to by SHA-256 hash, to save space.
 
-\subsection{Adjacent segments}
-\label{sec:AdjacentSegments}
+\subsection{Neighboring segments}
+\label{sec:NeighboringSegments}
 
-The block may include sections of blockchain from adjacent chunks,
-referred to as {\bf adjacent segments}.
+The block may include sections of blockchain from neighboring chunks,
+referred to as {\bf neighboring segments}.
 
-Adjacent segments must be consistent continuations of any previously-observed adjacent segments
+Neighboring segments must be consistent continuations of any previously-observed neighboring segments
 earlier on the central blockchain.
-They may, themselves, recursively refer to parts of the current blockchain as their own adjacent segments,
+They may, themselves, recursively refer to parts of the current blockchain as their own neighboring segments,
 summarized by their hashes for compactness.
 
-When a block includes an adjacent segment, the chunk's estimate for that adjacent chunk's state is updated to match the information in the adjacent segment.
-Regular mutual inclusion of adjacent segments from adjacent chunks' blockchains
+When a block includes an neighboring segment, the chunk's estimate for that neighboring chunk's state is updated to match the information in the neighboring segment.
+Regular mutual inclusion of neighboring segments from neighboring chunks' blockchains
 corresponds to keeping a bidirectional read-only interface open between those chunks.
 
 To incentivize this bidirectional traffic,
-inclusion of an adjacent segment in a block for the first time
+inclusion of an neighboring segment in a block for the first time
 accrues an additional benefit of $C/R$ coins to the miner of the block,
-where $C$ is the number of {\bf redeemable coins} mined or accrued (via more distant, proximal adjacencies)
-by cells in the adjacent chunk,
-and $R$ is the {\bf redemption rate}, the number of redeemable coins in adjacent chunks
+where $C$ is the number of {\bf redeemable coins} mined or accrued (via transitive neighbor relationships)
+by cells in the neighboring chunk,
+and $R$ is the {\bf redemption rate}, the number of redeemable coins in neighboring chunks
 required to accrue a coin in the current chunk.
-It is of course necessary to have $R>2$ to prevent an explosion of redeemable coins in 3D space;
-another notable value is $R=26$, which (in the densely-connected Moore neighborhood)
+It is of course necessary to have $R>2$ to prevent an explosion of redeemable value in 3D space;
+a conservative value is $R=26$, which (in the densely-connected Moore neighborhood)
 ensures that the number of coins redeemed is less than the number of coins mined locally
 (the corresponding value for the von Neumann neighborhood of Table~\ref{tab:VonNeumannNeighborhood}
 is much lower, at $R=6$).
@@ -477,7 +482,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
   All address ranges not defined in this table are read-only and zero;
   writing to these addresses has no effect.
   Pages mapping to cells outside the chunk (e.g. $x<L\alpha_x$ or $x \geq (L+1)\alpha_x$, or similarly for $y,z$)
-  are read-only and zero (unless otherwise specified, as in Section~\ref{sec:AdjacentCells}).
+  are read-only and zero (unless otherwise specified, as in Section~\ref{sec:NeighborChunks}).
   Writing to these addresses has no effect.
   \asslabels
 }
