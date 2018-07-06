@@ -5,7 +5,8 @@
 
 % Memory address
 \newcommand\code[1]{{\tt #1}}
-\newcommand\hex[1]{{\tt #1}}
+\newcommand\boldcode[1]{\code{#1}}
+\newcommand\hex[1]{{\tt 0x#1}}
 \newcommand\hexrange[2]{\hex{#1}{\tt -}\hex{#2}}
 
 % Document
@@ -377,56 +378,70 @@ and the computational burden is roughly comparable to a 6502 CPU.
 % Tables, macros
 % Macro to generate neighborhood memory map table
 \newcommand\memtable[1]{
-\begin{tabular}{lll}
+\begin{tabular}{rlll}
   \hline
-  From & To & Contents \\
+  Label & From & To & Contents \\
   \hline
   #1
   \hline
 \end{tabular}
 }
 
-\newcommand\memrow[4]{
-    \hex{{#1}00} & \hex{{#1}FF} & State of cell $(x#2,y#3,z#4)$ \\
+\newcommand\memrow[5]{
+    \boldcode{#5} & \hex{{#1}00} & \hex{{#1}FF} & State of cell $(x#2,y#3,z#4)$ \\
 }
 
 % The \memxyz macro gives a densely-connected (von Neumann) neighborhood
-\newcommand\memz[5]{
-  \memrow{#1}{#4}{#5}{-1}
-  \memrow{#2}{#4}{#5}{}
-  \memrow{#3}{#4}{#5}{+1}
+\newcommand\memz[6]{
+  \memrow{#1}{#4}{#5}{-1}{D#6}
+  \memrow{#2}{#4}{#5}{}{#6}
+  \memrow{#3}{#4}{#5}{+1}{U#6}
 }
 
-\newcommand\memyz[2]{
-  \memz{{#1}0}{{#1}1}{{#1}2}{#2}{-1}
-  \memz{{#1}4}{{#1}5}{{#1}6}{#2}{}
-  \memz{{#1}8}{{#1}9}{{#1}A}{#2}{+1}
+\newcommand\memyz[3]{
+  \memz{{#1}0}{{#1}1}{{#1}2}{#2}{-1}{S#3}
+  \memz{{#1}4}{{#1}5}{{#1}6}{#2}{}{#3}
+  \memz{{#1}8}{{#1}9}{{#1}A}{#2}{+1}{N#3}
 }
 
 \newcommand\memxyz{
-  \memyz{4}{-1}
+  \memyz{4}{-1}{W}
 
   %  \memyz{5}{} includes zero page-mapped cell (x,y,z), which we want to skip, so spell it out without that
-  \memz{50}{51}{52}{}{-1}
-  \memrow{54}{}{}{-1}
-  \memrow{56}{}{}{+1}
-  \memz{58}{59}{5A}{}{+1}
+  \memz{50}{51}{52}{}{-1}{S}
+  \memrow{54}{}{}{-1}{W}
+  \memrow{56}{}{}{+1}{E}
+  \memz{58}{59}{5A}{}{+1}{N}
 
-  \memyz{6}{+1}
+  \memyz{6}{+1}{E}
 }
 
-% The following table is a sparse neighborhood
+% The following table is a sparse neighborhood (von Neumann, 6 neighbors/cell)
 \newcommand\vonneumannmap{\memtable{
-  \memrow{45}{-1}{}{}
-  \memrow{51}{}{-1}{}
-  \memrow{54}{}{}{-1}
-  \memrow{56}{}{}{+1}
-  \memrow{59}{}{+1}{}
-  \memrow{65}{+1}{}{}
+  \memrow{45}{-1}{}{}{W}
+  \memrow{51}{}{-1}{}{S}
+  \memrow{54}{}{}{-1}{D}
+  \memrow{56}{}{}{+1}{U}
+  \memrow{59}{}{+1}{}{N}
+  \memrow{65}{+1}{}{}{E}
 }}
 
-% The following neighborhood is dense
+% The following neighborhood is dense (Moore, 26 neighbors/cell)
 \newcommand\mooremap{\memtable{\memxyz}}
+
+% Captions
+\newcommand\labeq[2]{\boldcode{#1}\code{=}\hex{#2}}
+\newcommand\asslabels{
+  The labels (\code{N}, \code{S}, \code{E}, \code{W}, \code{U}, \code{D} \ldots)
+  are pre-defined in the assembler to the respective base addresses (\labeq{N}{5900}, \labeq{S}{5100}, and so on).
+  The corresponding labels with \code{PAGE} appended
+  are predefined to be the respective MSBs of those base addresses (\labeq{NPAGE}{59}, \labeq{SPAGE}{51}, and so on).
+  The assembler also pre-defines the symbols
+  \labeq{XDIR}{1000}, \labeq{YDIR}{0400}, \labeq{ZDIR}{0100};
+  \labeq{XPAGE}{10}, \labeq{YPAGE}{04}, \labeq{ZPAGE}{01};
+  \labeq{ORIG}{5500}, \labeq{ORIGPAGE}{55};
+  \labeq{BASE}{4000}, \labeq{BASEPAGE}{40}.
+}
 
 % Tables
 \begin{table}
@@ -442,7 +457,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
   \hex{8000} & \hex{FFF0} & ROM & Operating system \\
   \hex{FFF0} & \hex{FFF5} & ROM & Reserved; zero \\
   \hex{FFF6} & \hex{FFF7} & Read-only & \code{TIME}: number of cycles left until termination \\
-  \hex{FFF8} & \hex{FFF8} & Write-only & \code{SWAP}: swap storage page with neighbor \\
+  \hex{FFF8} & \hex{FFF8} & Write-only & \code{SWAP}: write to swap cell with neighbor \\
   \hex{FFF9} & \hex{FFF9} & Read-only & \code{RAND}: random byte generator \\
   \hex{FFFA} & \hex{FFFF} & ROM & Reset and interrupt vectors: zero \\
   \hline
@@ -464,6 +479,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
   Pages mapping to cells outside the chunk (e.g. $x<L\alpha_x$ or $x \geq (L+1)\alpha_x$, or similarly for $y,z$)
   are read-only and zero (unless otherwise specified, as in Section~\ref{sec:AdjacentCells}).
   Writing to these addresses has no effect.
+  \asslabels
 }
 \end{table}
 
@@ -474,6 +490,7 @@ and the computational burden is roughly comparable to a 6502 CPU.
   Memory map for the 6502 virtual machine of cell $(x,y,z)$,
   using the 6-cell three-dimensional von Neumann neighborhood.
   This memory map may be considered a subset of the memory map in Table~\ref{tab:MooreNeighborhood}.
+  \asslabels
 }
 \end{table}
 
@@ -500,10 +517,11 @@ and the computational burden is roughly comparable to a 6502 CPU.
 \begin{figure}
   \includegraphics[width=\textwidth]{unitcube.pdf}
 \caption{
-  The unit cube of the Moore neighborhood, and its relationship to the memory map of Table~\ref{tab:MooreNeighborhood}.
+  The memory-mapped neighborhood of a cell (see Table~\ref{tab:MemoryMap} and Table~\ref{tab:MooreNeighborhood}).
   The central cell is at $(1,1,1)$, and is mapped to zero page.
   All other cells are mapped to pages in the range \hexrange{4000}{7FFF},
   the first six bits of the address MSB corresponding to the $x$, $y$ and $z$ co-ordinates within this cell (see Table~\ref{tab:AddressBits}).
+  \asslabels
   \label{fig:UnitCube}
 }
 \end{figure}
