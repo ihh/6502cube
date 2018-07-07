@@ -1,4 +1,7 @@
-# 6502cube
+# 6502wars
 Whitepaper describing 6502-based cellular automata
 
-Uses https://github.com/Torlus/6502.js
+Code acknowledgements:
+- Emulator: https://github.com/Torlus/6502.js
+- Assembler: http://www.masswerk.at/6502/
+
