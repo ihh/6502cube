@@ -1,6 +1,5 @@
 // OldSrc^OldSrcDir OldTgt^OldTgtDir => NewSrc^NewSrcDir NewTgt^NewTgtDir (Weight) : { ... Prolog ... }.
 
-
 Rules
 = _ h:Rule t:Rules { return h.concat(t) }
 / _ h:Rule _ { return h }
@@ -24,17 +23,17 @@ RuleRhsSymbols
  = s:$NewSource Space t:$NewTarget { return [s, t] }
  / s:$NewSource { return [s, "$t"] }
 
-OldSource = s:Symbol "^" d:OldSourceDirChar+ { return [s,d] } / s:Symbol { return [s,"0123"] }
-OldTarget = s:Symbol "^" d:OldTargetDirChar+ { return [s,d] } / s:Symbol { return [s,"0123"] }
-NewSource = s:RhsSymbol "^" d:RhsDirChar+ { return [s,d] } / s:Symbol { return [s,"a"] }
-NewTarget = s:RhsSymbol "^" d:RhsDirChar+ { return [s,d] } / s:Symbol { return [s,"w"] }
+OldSource = SymDir
+OldTarget = SymDir
+NewSource = SymDir
+NewTarget = SymDir
 
-RhsSymbol = "$s" / "$t" / Symbol
+SymDir
+ = s:Symbol "^" d:DirChar { return [s,d] }
+ / s:Symbol { return [s,null] }
 
 Symbol = h:[a-z_] t:[a-z0-9_]* { return h + t.join('') }
-OldSourceDirChar = [0-3]
-OldTargetDirChar = [0-3a-d]
-RhsDirChar = [0-3a-dw-z]
+DirChar = [0-3]
 
 Number = [0-9]+ / [0-9]+ "." [0-9]*
 
