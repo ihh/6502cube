@@ -1,19 +1,13 @@
+// OldSrc^OldSrcDir OldTgt^OldTgtDir => NewSrc^NewSrcDir NewTgt^NewTgtDir (Weight) : { ... Prolog ... }.
+
+
 Rules
 = _ h:Rule t:Rules { return h.concat(t) }
 / _ h:Rule _ { return h }
 
 Rule
-  = s:$OldSource _ "{" l:SourcedRules _ "}" { return l.map ((r)=>[s].concat(r)) }
-  / s:$OldSource Space t:$OldTarget _ l:TargetedRules { return l.map ((r)=>[s].concat(r)) }
-  / s:$OldSource _ l:SelfRules { return l.map ((r)=>[s,[]].concat(r)) }
-
-SourcedRules
- = _ h:SourcedRule t:SourcedRules { return h.concat(t) }
- / _ h:SourcedRule _ { return h }
-
-SourcedRule
- = TargetedRules
- / l:SelfRules { return l.map ((r)=>[[]].concat(r)) }
+  = s:$OldSource Space t:$OldTarget _ l:TargetedRules { return l.map ((r)=>[s].concat(r)) }
+  / s:$OldSource _ l:SelfRules { return l.map ((r)=>[s,null].concat(r)) }
 
 TargetedRules = t:$OldTarget _ l:SelfRules { return l.map ((r)=>[t].concat(r)) }
 SelfRules = "=>" _ l:RuleRhsList _ "." { return l }
@@ -21,7 +15,7 @@ SelfRules = "=>" _ l:RuleRhsList _ "." { return l }
 RuleRhsList
  = _ h:RuleRhs _ "|" t:RuleRhsList { return [h].concat(t) }
  / _ h:RuleRhs _ { return [h] }
-
+ 
 RuleRhs
  = s:RuleRhsSymbols _ "(" _ w:Number _ ")" { return s.concat(w) }
  / s:RuleRhsSymbols { return s.concat(1) }
